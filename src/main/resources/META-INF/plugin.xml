@@ -5,13 +5,16 @@
     <vendor>z-zg</vendor>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.java</depends> <!-- 添加 Java 插件依赖 -->
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 
-    <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="com.github.zzg.gen.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
-    </extensions>
-
+    <actions>
+        <action id="com.example.myplugin.GenerateCustomCode" class="com.github.zzg.gen.GenAnAction"
+                text="Generate Custom Code" description="Generate custom code">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
+    </actions>
     <applicationListeners>
         <listener class="com.github.zzg.gen.listeners.MyApplicationActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
     </applicationListeners>
