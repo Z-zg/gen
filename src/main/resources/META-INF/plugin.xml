@@ -8,7 +8,13 @@
     <depends>com.intellij.java</depends> <!-- 添加 Java 插件依赖 -->
 
     <resource-bundle>messages.MyBundle</resource-bundle>
-
+    <extensions defaultExtensionNs="com.intellij">
+        <projectConfigurable
+                instance="com.example.MyPluginConfigurable"
+                displayName="My Plugin Settings"
+                id="myPluginSettings"
+                groupId="tools"/>
+    </extensions>
     <actions>
         <action id="com.example.myplugin.GenerateCustomCode" class="com.github.zzg.gen.GenAnAction"
                 text="Generate Custom Code" description="Generate custom code">
