@@ -1,5 +1,7 @@
 package com.github.zzg.gen
 
+import com.github.zzg.gen.Parser.parseEntityDescAnnotation
+import com.github.zzg.gen.config.MyPluginSettings
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
@@ -43,10 +45,11 @@ class GenAnAction : AnAction() {
         // 检查是否包含目标注解
         val targetAnnotation = "org.zq.EntityDesc" // 替换为你的目标注解
         val hasAnnotation = hasAnnotation(psiClass, targetAnnotation)
-
         // 显示结果
         if (hasAnnotation) {
             // 需要解析
+            val metadata = parseEntityDescAnnotation(psiClass)!!
+            EntityGenerator(MyPluginSettings(),metadata).generate()
         } else {
             Messages.showInfoMessage("The class does not contain the annotation: $targetAnnotation", "Info")
         }

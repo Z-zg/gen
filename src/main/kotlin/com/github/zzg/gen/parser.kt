@@ -3,6 +3,7 @@ package com.github.zzg.gen
 
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiField
+
 @Suppress("unused")
 object Parser {
     fun parseEntityDescAnnotation(psiClass: PsiClass): EntityDescMetadata? {
@@ -21,16 +22,20 @@ object Parser {
             it.text.removeSurrounding("\"")
         }?.toTypedArray() ?: emptyArray()
         // 返回注解信息
-        return EntityDescMetadata(
-            tbName = tbName ?: "",
-            desc = desc ?: "",
-            logicDel = logicDel,
-            pkg = pkg ?: "",
-            namespace = namespace ?: "",
-            superClass = superClass ?: "",
-            childClass = childClass ?: "",
-            index = index
-        )
+        return psiClass.fields.map { parseEntityFieldDescAnnotation(it) }.toTypedArray().let {
+            EntityDescMetadata(
+                className = psiClass.name ?: "",
+                tbName = tbName ?: "",
+                desc = desc ?: "",
+                logicDel = logicDel,
+                pkg = pkg ?: "",
+                namespace = namespace ?: "",
+                superClass = superClass ?: "",
+                childClass = childClass ?: "",
+                fields = it,
+                index = index
+            )
+        }
     }
 
 
@@ -61,8 +66,8 @@ object Parser {
 }
 
 
-
 data class EntityDescMetadata(
+    val className: String,
     val tbName: String,
     val desc: String,
     val logicDel: Boolean,
@@ -70,38 +75,9 @@ data class EntityDescMetadata(
     val namespace: String,
     val superClass: String,
     val childClass: String,
+    val fields: Array<EntityFieldDescMetadata?>,
     val index: Array<String>
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (javaClass != other?.javaClass) return false
-
-        other as EntityDescMetadata
-
-        if (tbName != other.tbName) return false
-        if (desc != other.desc) return false
-        if (logicDel != other.logicDel) return false
-        if (pkg != other.pkg) return false
-        if (namespace != other.namespace) return false
-        if (superClass != other.superClass) return false
-        if (childClass != other.childClass) return false
-        if (!index.contentEquals(other.index)) return false
-
-        return true
-    }
-
-    override fun hashCode(): Int {
-        var result = tbName.hashCode()
-        result = 31 * result + desc.hashCode()
-        result = 31 * result + logicDel.hashCode()
-        result = 31 * result + pkg.hashCode()
-        result = 31 * result + namespace.hashCode()
-        result = 31 * result + superClass.hashCode()
-        result = 31 * result + childClass.hashCode()
-        result = 31 * result + index.contentHashCode()
-        return result
-    }
-}
+)
 
 
 data class EntityFieldDescMetadata(

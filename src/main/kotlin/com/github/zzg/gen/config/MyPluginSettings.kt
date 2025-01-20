@@ -11,6 +11,7 @@ import com.intellij.util.xmlb.XmlSerializerUtil
     storages = [Storage("my-plugin-settings.xml")]
 )
 class MyPluginSettings : PersistentStateComponent<MyPluginSettings> {
+    var author: String? = "小赵"
     var outputDirectory: String = ""
     var generateDTO: Boolean = true
     var generateDAO: Boolean = true
