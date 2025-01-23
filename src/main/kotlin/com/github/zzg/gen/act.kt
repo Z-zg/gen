@@ -25,6 +25,7 @@ class GenAnAction : AnAction() {
             return
         }
 
+        val project = event.project!!
         // 获取光标偏移量
         val offset = editor.caretModel.offset
 
@@ -49,7 +50,8 @@ class GenAnAction : AnAction() {
         if (hasAnnotation) {
             // 需要解析
             val metadata = parseEntityDescAnnotation(psiClass)!!
-            EntityGenerator(MyPluginSettings(),metadata).generate()
+
+            EntityGenerator(Context(MyPluginSettings.getInstance(project = event.project!!),metadata,psiClass, project)).generate()
         } else {
             Messages.showInfoMessage("The class does not contain the annotation: $targetAnnotation", "Info")
         }

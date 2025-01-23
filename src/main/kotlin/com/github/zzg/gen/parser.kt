@@ -9,7 +9,7 @@ object Parser {
     fun parseEntityDescAnnotation(psiClass: PsiClass): EntityDescMetadata? {
         // 获取 @EntityDesc 注解
         val entityDescAnnotation = psiClass.getAnnotation("org.zq.EntityDesc") ?: return null
-
+        val module = entityDescAnnotation.findAttributeValue("module")?.text?.removeSurrounding("\"")
         // 读取注解属性
         val tbName = entityDescAnnotation.findAttributeValue("tbName")?.text?.removeSurrounding("\"")
         val desc = entityDescAnnotation.findAttributeValue("desc")?.text?.removeSurrounding("\"")
@@ -24,6 +24,7 @@ object Parser {
         // 返回注解信息
         return psiClass.fields.map { parseEntityFieldDescAnnotation(it) }.toTypedArray().let {
             EntityDescMetadata(
+                module = module ?: "",
                 className = psiClass.name ?: "",
                 tbName = tbName ?: "",
                 desc = desc ?: "",
@@ -67,11 +68,12 @@ object Parser {
 
 
 data class EntityDescMetadata(
+    val module: String,
+    val pkg: String,
     val className: String,
     val tbName: String,
     val desc: String,
     val logicDel: Boolean,
-    val pkg: String,
     val namespace: String,
     val superClass: String,
     val childClass: String,
