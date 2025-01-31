@@ -3,6 +3,10 @@ package com.github.zzg.gen
 
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiField
+import com.intellij.psi.PsiJavaFile
+import com.intellij.psi.PsiType
+import com.intellij.psi.impl.source.tree.java.PsiClassObjectAccessExpressionImpl
+
 
 @Suppress("unused")
 object Parser {
@@ -15,8 +19,9 @@ object Parser {
         val desc = entityDescAnnotation.findAttributeValue("desc")?.text?.removeSurrounding("\"")
         val logicDel = entityDescAnnotation.findAttributeValue("logicDel")?.text?.toBoolean() ?: true
         val pkg = entityDescAnnotation.findAttributeValue("pkg")?.text?.removeSurrounding("\"")
+            ?: (psiClass.containingFile as PsiJavaFile).packageName
         val namespace = entityDescAnnotation.findAttributeValue("namespace")?.text?.removeSurrounding("\"")
-        val superClass = entityDescAnnotation.findAttributeValue("superClass")?.text?.removeSurrounding("\"")
+        val superClass = (entityDescAnnotation.findAttributeValue("superClass") as PsiClassObjectAccessExpressionImpl).type
         val childClass = entityDescAnnotation.findAttributeValue("childClass")?.text?.removeSurrounding("\"")
         val index = entityDescAnnotation.findAttributeValue("index")?.children?.map {
             it.text.removeSurrounding("\"")
@@ -31,7 +36,7 @@ object Parser {
                 logicDel = logicDel,
                 pkg = pkg ?: "",
                 namespace = namespace ?: "",
-                superClass = superClass ?: "",
+                superClass = superClass,
                 childClass = childClass ?: "",
                 fields = it,
                 index = index
@@ -54,8 +59,10 @@ object Parser {
 
         // 返回注解信息
         return EntityFieldDescMetadata(
-            desc = desc ?: "",
-            columnName = columnName ?: "",
+            field = field.name,
+            type = field.type,
+            desc = (desc ?: "")+".",
+            columnName = columnName ?: field.name,
             primary = primary,
             width = width,
             pass = pass,
@@ -75,7 +82,7 @@ data class EntityDescMetadata(
     val desc: String,
     val logicDel: Boolean,
     val namespace: String,
-    val superClass: String,
+    val superClass: PsiType?,
     val childClass: String,
     val fields: Array<EntityFieldDescMetadata?>,
     val index: Array<String>
@@ -83,6 +90,8 @@ data class EntityDescMetadata(
 
 
 data class EntityFieldDescMetadata(
+    val field: String,
+    val type: PsiType,
     val desc: String,
     val columnName: String,
     val primary: Boolean,

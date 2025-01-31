@@ -5,8 +5,10 @@ import com.github.zzg.gen.config.MyPluginSettings
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.ui.Messages
 import com.intellij.psi.PsiClass
+import com.intellij.psi.codeStyle.CodeStyleManager
 import com.intellij.psi.util.PsiTreeUtil
 
 class GenAnAction : AnAction() {
@@ -51,7 +53,16 @@ class GenAnAction : AnAction() {
             // 需要解析
             val metadata = parseEntityDescAnnotation(psiClass)!!
 
-            EntityGenerator(Context(MyPluginSettings.getInstance(project = event.project!!),metadata,psiClass, project)).generate()
+            val file = EntityGenerator(Context(MyPluginSettings(),metadata,psiClass, project)).generate()!!
+//            val project = psiFile.project
+
+            // 在写操作上下文中执行格式化
+            WriteCommandAction.runWriteCommandAction(project) {
+                // 获取 CodeStyleManager 实例
+                val codeStyleManager = CodeStyleManager.getInstance(project)
+                // 对整个 PsiFile 进行格式化
+                codeStyleManager.reformat(file)
+            }
         } else {
             Messages.showInfoMessage("The class does not contain the annotation: $targetAnnotation", "Info")
         }
