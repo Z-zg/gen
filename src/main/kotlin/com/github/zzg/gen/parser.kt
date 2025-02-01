@@ -1,10 +1,7 @@
 package com.github.zzg.gen
 
 
-import com.intellij.psi.PsiClass
-import com.intellij.psi.PsiField
-import com.intellij.psi.PsiJavaFile
-import com.intellij.psi.PsiType
+import com.intellij.psi.*
 import com.intellij.psi.impl.source.tree.java.PsiClassObjectAccessExpressionImpl
 
 
@@ -21,13 +18,31 @@ object Parser {
         val pkg = entityDescAnnotation.findAttributeValue("pkg")?.text?.removeSurrounding("\"")
             ?: (psiClass.containingFile as PsiJavaFile).packageName
         val namespace = entityDescAnnotation.findAttributeValue("namespace")?.text?.removeSurrounding("\"")
-        val superClass = (entityDescAnnotation.findAttributeValue("superClass") as PsiClassObjectAccessExpressionImpl).type
+        val superClass =
+            (entityDescAnnotation.findAttributeValue("superClass") as PsiClassObjectAccessExpressionImpl).type
         val childClass = entityDescAnnotation.findAttributeValue("childClass")?.text?.removeSurrounding("\"")
         val index = entityDescAnnotation.findAttributeValue("index")?.children?.map {
             it.text.removeSurrounding("\"")
         }?.toTypedArray() ?: emptyArray()
         // 返回注解信息
         return psiClass.fields.map { parseEntityFieldDescAnnotation(it) }.toTypedArray().let {
+            var copy = it
+            if (logicDel) {
+                copy = copy.plus(
+                    EntityFieldDescMetadata(
+                        "flagDel",
+                        PsiElementFactory.getInstance(psiClass.project).createPrimitiveType("boolean")!!,
+                        desc = "删除标识",
+                        columnName = "flagDel",
+                        primary = false,
+                        width = 0,
+                        pass = false,
+                        queryable = true,
+                        sortable = true,
+                        remark = ""
+                    )
+                )
+            }
             EntityDescMetadata(
                 module = module ?: "",
                 className = psiClass.name ?: "",
@@ -38,14 +53,14 @@ object Parser {
                 namespace = namespace ?: "",
                 superClass = superClass,
                 childClass = childClass ?: "",
-                fields = it,
+                fields = copy,
                 index = index
             )
         }
     }
 
 
-    fun parseEntityFieldDescAnnotation(field: PsiField): EntityFieldDescMetadata? {
+    private fun parseEntityFieldDescAnnotation(field: PsiField): EntityFieldDescMetadata? {
         val fieldDescAnnotation = field.getAnnotation("org.zq.EntityFieldDesc") ?: return null
         // 读取注解属性
         val desc = fieldDescAnnotation.findAttributeValue("desc")?.text?.removeSurrounding("\"")
@@ -61,7 +76,7 @@ object Parser {
         return EntityFieldDescMetadata(
             field = field.name,
             type = field.type,
-            desc = (desc ?: "")+".",
+            desc = (desc ?: "") + ".",
             columnName = columnName ?: field.name,
             primary = primary,
             width = width,

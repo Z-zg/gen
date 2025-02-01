@@ -18,7 +18,46 @@ import org.jetbrains.kotlin.utils.addToStdlib.ifTrue
 
 interface Generator {
     val context: Context
+    fun findClassInModule(module: Module, packageName: String, className: String): PsiClass? {
+        val scope = GlobalSearchScope.moduleWithDependenciesAndLibrariesScope(module)
+        return JavaPsiFacade.getInstance(module.project).findClass("$packageName.$className", scope)
+    }
+
+    fun findMavenModuleOrCurrent(project: Project, moduleName: String):
+            Module? {
+        val module = findModule(project, moduleName)
+        return module ?: ModuleManager.getInstance(project).modules.first()
+    }
+
+    fun getOrCreateDirectory(packageName: String, module: Module): PsiDirectory {
+        val moduleRootManager = ModuleRootManager.getInstance(module)
+        val contentRoots = moduleRootManager.sourceRoots
+        if (contentRoots.isEmpty()) {
+            throw IllegalStateException("Module root directory not found")
+        }
+
+        val moduleRoot = contentRoots[0]
+        val psiManager = PsiManager.getInstance(module.project)
+        val moduleRootDir =
+            psiManager.findDirectory(moduleRoot) ?: throw IllegalStateException("Module root directory not found")
+
+        val packagePath = packageName.replace('.', '/')
+        var currentDir = moduleRootDir
+        for (pathSegment in packagePath.split('/')) {
+            val subDir = currentDir.findSubdirectory(pathSegment)
+            if (subDir == null) {
+                currentDir = currentDir.createSubdirectory(pathSegment)
+            } else {
+                currentDir = subDir
+            }
+        }
+        return currentDir
+    }
+
     fun generate(): PsiFile?
+    fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass
+    fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass
+    fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata)
 }
 
 fun getDefaultValue(type: String): String {
@@ -43,62 +82,6 @@ fun isCustomType(fieldType: String): Boolean {
 public fun findModule(project: Project, moduleName: String):
         Module? {
     return ModuleManager.getInstance(project).modules.find { it.name == moduleName }
-}
-
-public fun findMavenModuleOrCurrent(project: Project, moduleName: String):
-        Module? {
-    val module = findModule(project, moduleName)
-    return module ?: ModuleManager.getInstance(project).modules.first()
-}
-
-public fun findClassInModule(module: Module, packageName: String, className: String): PsiClass? {
-    val scope = GlobalSearchScope.moduleWithDependenciesAndLibrariesScope(module)
-    return JavaPsiFacade.getInstance(module.project).findClass("$packageName.$className", scope)
-}
-
-public fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
-    val psiClass = findClassInModule(module, metadata.pkg, metadata.className)
-    return psiClass ?: createNewClass(module, metadata)
-}
-
-public fun getOrCreateDirectory(packageName: String, module: Module): PsiDirectory {
-    val moduleRootManager = ModuleRootManager.getInstance(module)
-    val contentRoots = moduleRootManager.sourceRoots
-    if (contentRoots.isEmpty()) {
-        throw IllegalStateException("Module root directory not found")
-    }
-
-    val moduleRoot = contentRoots[0]
-    val psiManager = PsiManager.getInstance(module.project)
-    val moduleRootDir =
-        psiManager.findDirectory(moduleRoot) ?: throw IllegalStateException("Module root directory not found")
-
-    val packagePath = packageName.replace('.', '/')
-    var currentDir = moduleRootDir
-    for (pathSegment in packagePath.split('/')) {
-        val subDir = currentDir.findSubdirectory(pathSegment)
-        if (subDir == null) {
-            currentDir = currentDir.createSubdirectory(pathSegment)
-        } else {
-            currentDir = subDir
-        }
-    }
-    return currentDir
-}
-
-public fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
-    WriteCommandAction.runWriteCommandAction(module.project) {
-        val psiElementFactory = PsiElementFactory.getInstance(module.project)
-        val psiClass = psiElementFactory.createClass(metadata.className)
-        val psiFile = PsiFileFactory.getInstance(module.project).createFileFromText(
-            "${metadata.className}.java",
-            JavaFileType.INSTANCE,
-            psiElementFactory.createPackageStatement(metadata.pkg).text + psiClass.text
-        ) as PsiJavaFile
-        val directory = getOrCreateDirectory(metadata.pkg, module)
-        directory.add(psiFile)
-    };
-    return findOrCreateClass(module, metadata)
 }
 
 
@@ -152,15 +135,6 @@ fun genAssignFromItem(field: EntityFieldDescMetadata?): String {
     } ?: ""
 }
 
-private fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
-    val psiElementFactory = PsiElementFactory.getInstance(psiClass.project)
-    updateClassPkg(psiElementFactory, metadata, psiClass)
-    updateClassComment(metadata, psiElementFactory, psiClass)
-    updateEntityFields(metadata, psiClass, psiElementFactory)
-    PsiDocumentManager.getInstance(psiClass.project).commitAllDocuments()
-    psiClass.containingFile.virtualFile?.refresh(false, false)
-
-}
 
 private fun updateEntityFields(
     metadata: EntityDescMetadata,
@@ -302,70 +276,16 @@ private fun genGetterAndSetter(
     }
 
     if (psiClass.methods.none { it.name == getter.name }) {
-        if (index == 0){
+        if (index == 0) {
             psiClass.add(getter)
-        }else{
+        } else {
             val fieldName1 = metadata.fields[index - 1]?.field ?: ""
             val setter1 = psiClass.methods.find { it.name == "set$fieldName1" }
-            if (setter1 == null){
+            if (setter1 == null) {
                 psiClass.add(getter)
-            }else{
+            } else {
                 setter1.addAfter(getter, setter1.lastChild)
             }
-        }
-    }
-}
-
-private fun updateClassPkg(
-    psiElementFactory: PsiElementFactory,
-    metadata: EntityDescMetadata,
-    psiClass: PsiClass
-) {
-    // Update package statement
-    val packageStatement = psiElementFactory.createPackageStatement(metadata.pkg)
-    // 检查是否已经存在 package 语句
-    val existingPackageStatement = psiClass.containingFile.children.find {
-        it is PsiPackageStatement
-    } as? PsiPackageStatement
-
-    // 如果不存在 package 语句，则添加
-    if (existingPackageStatement == null) {
-        psiClass.containingFile.addBefore(packageStatement, psiClass)
-    } else {
-        // 如果存在，检查是否需要更新
-        if (existingPackageStatement.packageName != metadata.pkg) {
-            // 更新 package 语句
-            existingPackageStatement.replace(packageStatement)
-        }
-    }
-}
-
-private fun updateClassComment(
-    metadata: EntityDescMetadata,
-    psiElementFactory: PsiElementFactory,
-    psiClass: PsiClass
-) {
-    // Update class comment
-    val classCommentText = "/**\n" +
-            " * ${metadata.desc}\n" +
-            " *\n" +
-            " * 文件由鹏业软件模型工具生成(模板名称：JavaAdv),一般不应直接修改此文件.\n" +
-            " * Copyright (C) 2008 - 鹏业软件公司\n" +
-            " */"
-    val classComment = psiElementFactory.createCommentFromText(
-        classCommentText, psiClass
-    )
-    // 检查是否已经存在类似的类注释
-    val existingClassComment = psiClass.firstChild as? PsiComment
-
-    // 如果不存在类注释，或者现有的注释内容与新的注释内容不同，则添加或更新
-    if (existingClassComment == null || existingClassComment.text != classCommentText) {
-        if (existingClassComment != null) {
-            // 如果存在类注释但内容不同，则替换
-            existingClassComment.replace(classComment)
-        } else {
-            // 如果不存在类注释，则添加
-            psiClass.addBefore(classComment, psiClass.firstChild)
         }
     }
 }
@@ -381,6 +301,8 @@ data class Context(
 class EntityGenerator(
     override val context: Context
 ) : Generator {
+
+
     override fun generate(): PsiFile? {
         val module = findMavenModuleOrCurrent(context.project, context.metadata.module)!!
         val psiClass = findOrCreateClass(module, context.metadata)
@@ -390,6 +312,90 @@ class EntityGenerator(
         }
         return psiClass.containingFile
     }
+
+    private fun updateClassPkg(
+        psiElementFactory: PsiElementFactory,
+        pkg: String,
+        psiClass: PsiClass
+    ) {
+        // Update package statement
+        val packageStatement = psiElementFactory.createPackageStatement(pkg)
+        // 检查是否已经存在 package 语句
+        val existingPackageStatement = psiClass.containingFile.children.find {
+            it is PsiPackageStatement
+        } as? PsiPackageStatement
+
+        // 如果不存在 package 语句，则添加
+        if (existingPackageStatement == null) {
+            psiClass.containingFile.addBefore(packageStatement, psiClass)
+        } else {
+            // 如果存在，检查是否需要更新
+            if (existingPackageStatement.packageName != pkg) {
+                // 更新 package 语句
+                existingPackageStatement.replace(packageStatement)
+            }
+        }
+    }
+
+    private fun updateClassComment(
+        metadata: EntityDescMetadata,
+        psiElementFactory: PsiElementFactory,
+        psiClass: PsiClass
+    ) {
+        // Update class comment
+        val classCommentText = "/**\n" +
+                " * ${metadata.desc}\n" +
+                " *\n" +
+                " * 文件由鹏业软件模型工具生成(模板名称：JavaAdv),一般不应直接修改此文件.\n" +
+                " * Copyright (C) 2008 - 鹏业软件公司\n" +
+                " */"
+        val classComment = psiElementFactory.createCommentFromText(
+            classCommentText, psiClass
+        )
+        // 检查是否已经存在类似的类注释
+        val existingClassComment = psiClass.firstChild as? PsiComment
+
+        // 如果不存在类注释，或者现有的注释内容与新的注释内容不同，则添加或更新
+        if (existingClassComment == null || existingClassComment.text != classCommentText) {
+            if (existingClassComment != null) {
+                // 如果存在类注释但内容不同，则替换
+                existingClassComment.replace(classComment)
+            } else {
+                // 如果不存在类注释，则添加
+                psiClass.addBefore(classComment, psiClass.firstChild)
+            }
+        }
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        val psiElementFactory = PsiElementFactory.getInstance(psiClass.project)
+        updateClassPkg(psiElementFactory, metadata.pkg, psiClass)
+        updateClassComment(metadata, psiElementFactory, psiClass)
+        updateEntityFields(metadata, psiClass, psiElementFactory)
+        PsiDocumentManager.getInstance(psiClass.project).commitAllDocuments()
+        psiClass.containingFile.virtualFile?.refresh(false, false)
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        val psiClass = findClassInModule(module, metadata.pkg, metadata.className)
+        return psiClass ?: createNewClass(module, metadata)
+    }
+
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        WriteCommandAction.runWriteCommandAction(module.project) {
+            val psiElementFactory = PsiElementFactory.getInstance(module.project)
+            val psiClass = psiElementFactory.createClass(metadata.className)
+            val psiFile = PsiFileFactory.getInstance(module.project).createFileFromText(
+                "${metadata.className}.java",
+                JavaFileType.INSTANCE,
+                psiElementFactory.createPackageStatement(metadata.pkg).text + psiClass.text
+            ) as PsiJavaFile
+            val directory = getOrCreateDirectory(metadata.pkg, module)
+            directory.add(psiFile)
+        };
+        return findOrCreateClass(module, metadata)
+    }
 }
 
 class EntityQueryParaGenerator(
@@ -397,6 +403,18 @@ class EntityQueryParaGenerator(
 ) : Generator {
     override fun generate(): PsiFile? {
         return null
+    }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
     }
 }
 
@@ -406,6 +424,18 @@ class EntityQueryExParaGenerator(
     override fun generate(): PsiFile? {
         return null
     }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
+    }
 }
 
 class DaoGenerator(
@@ -413,6 +443,18 @@ class DaoGenerator(
 ) : Generator {
     override fun generate(): PsiFile? {
         return null
+    }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
     }
 }
 
@@ -422,6 +464,18 @@ class IDaoGenerator(
     override fun generate(): PsiFile? {
         return null
     }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
+    }
 }
 
 class BaseSvrGenerator(
@@ -429,6 +483,18 @@ class BaseSvrGenerator(
 ) : Generator {
     override fun generate(): PsiFile? {
         return null
+    }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
     }
 }
 
@@ -438,6 +504,18 @@ class IBaseSvrGenerator(
     override fun generate(): PsiFile? {
         return null
     }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
+    }
 }
 
 class MybatisXmlGenerator(
@@ -445,6 +523,18 @@ class MybatisXmlGenerator(
 ) : Generator {
     override fun generate(): PsiFile? {
         return null
+    }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
     }
 }
 
@@ -454,6 +544,18 @@ class MybatisXmlExGenerator(
     override fun generate(): PsiFile? {
         return null
     }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
+    }
 }
 
 class MgeSvrGenerator(
@@ -461,6 +563,18 @@ class MgeSvrGenerator(
 ) : Generator {
     override fun generate(): PsiFile? {
         return null
+    }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
     }
 }
 
@@ -470,6 +584,18 @@ class IMgeSvrGenerator(
     override fun generate(): PsiFile? {
         return null
     }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
+    }
 }
 
 class ControllerSvrGenerator(
@@ -477,6 +603,18 @@ class ControllerSvrGenerator(
 ) : Generator {
     override fun generate(): PsiFile? {
         return null
+    }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
     }
 }
 
@@ -486,6 +624,18 @@ class IControllerSvrGenerator(
     override fun generate(): PsiFile? {
         return null
     }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
+    }
 }
 
 class BusinessGenerator(
@@ -493,6 +643,18 @@ class BusinessGenerator(
 ) : Generator {
     override fun generate(): PsiFile? {
         return null
+    }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
     }
 }
 
@@ -502,6 +664,18 @@ class IBusinessGenerator(
     override fun generate(): PsiFile? {
         return null
     }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
+    }
 }
 
 class TsGenerator(
@@ -510,6 +684,18 @@ class TsGenerator(
     override fun generate(): PsiFile? {
         return null
     }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
+    }
 }
 
 class TsControllerGenerator(
@@ -517,5 +703,17 @@ class TsControllerGenerator(
 ) : Generator {
     override fun generate(): PsiFile? {
         return null
+    }
+
+    override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
+        TODO("Not yet implemented")
+    }
+
+    override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
+        TODO("Not yet implemented")
     }
 }
