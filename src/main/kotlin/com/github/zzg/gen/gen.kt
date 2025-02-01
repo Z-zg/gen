@@ -5,14 +5,12 @@ package com.github.zzg.gen
 import com.github.zzg.gen.config.MyPluginSettings
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.command.WriteCommandAction
-import com.intellij.openapi.fileTypes.FileType
+import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
-import com.intellij.psi.*
-import com.intellij.openapi.module.Module
 import com.intellij.openapi.roots.ModuleRootManager
+import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
-import org.jetbrains.kotlin.idea.base.util.module
 import org.jetbrains.kotlin.utils.addToStdlib.ifTrue
 
 
@@ -21,6 +19,30 @@ interface Generator {
     fun findClassInModule(module: Module, packageName: String, className: String): PsiClass? {
         val scope = GlobalSearchScope.moduleWithDependenciesAndLibrariesScope(module)
         return JavaPsiFacade.getInstance(module.project).findClass("$packageName.$className", scope)
+    }
+
+    fun updateClassPkg(
+        psiElementFactory: PsiElementFactory,
+        pkg: String,
+        psiClass: PsiClass
+    ) {
+        // Update package statement
+        val packageStatement = psiElementFactory.createPackageStatement(pkg)
+        // 检查是否已经存在 package 语句
+        val existingPackageStatement = psiClass.containingFile.children.find {
+            it is PsiPackageStatement
+        } as? PsiPackageStatement
+
+        // 如果不存在 package 语句，则添加
+        if (existingPackageStatement == null) {
+            psiClass.containingFile.addBefore(packageStatement, psiClass)
+        } else {
+            // 如果存在，检查是否需要更新
+            if (existingPackageStatement.packageName != pkg) {
+                // 更新 package 语句
+                existingPackageStatement.replace(packageStatement)
+            }
+        }
     }
 
     fun findMavenModuleOrCurrent(project: Project, moduleName: String):
@@ -52,6 +74,36 @@ interface Generator {
             }
         }
         return currentDir
+    }
+
+    fun updateClassComment(
+        metadata: EntityDescMetadata,
+        psiElementFactory: PsiElementFactory,
+        psiClass: PsiClass
+    ) {
+        // Update class comment
+        val classCommentText = "/**\n" +
+                " * ${metadata.desc}\n" +
+                " *\n" +
+                " * 文件由鹏业软件模型工具生成(模板名称：JavaAdv),一般不应直接修改此文件.\n" +
+                " * Copyright (C) 2008 - 鹏业软件公司\n" +
+                " */"
+        val classComment = psiElementFactory.createCommentFromText(
+            classCommentText, psiClass
+        )
+        // 检查是否已经存在类似的类注释
+        val existingClassComment = psiClass.firstChild as? PsiComment
+
+        // 如果不存在类注释，或者现有的注释内容与新的注释内容不同，则添加或更新
+        if (existingClassComment == null || existingClassComment.text != classCommentText) {
+            if (existingClassComment != null) {
+                // 如果存在类注释但内容不同，则替换
+                existingClassComment.replace(classComment)
+            } else {
+                // 如果不存在类注释，则添加
+                psiClass.addBefore(classComment, psiClass.firstChild)
+            }
+        }
     }
 
     fun generate(): PsiFile?
@@ -313,59 +365,6 @@ class EntityGenerator(
         return psiClass.containingFile
     }
 
-    private fun updateClassPkg(
-        psiElementFactory: PsiElementFactory,
-        pkg: String,
-        psiClass: PsiClass
-    ) {
-        // Update package statement
-        val packageStatement = psiElementFactory.createPackageStatement(pkg)
-        // 检查是否已经存在 package 语句
-        val existingPackageStatement = psiClass.containingFile.children.find {
-            it is PsiPackageStatement
-        } as? PsiPackageStatement
-
-        // 如果不存在 package 语句，则添加
-        if (existingPackageStatement == null) {
-            psiClass.containingFile.addBefore(packageStatement, psiClass)
-        } else {
-            // 如果存在，检查是否需要更新
-            if (existingPackageStatement.packageName != pkg) {
-                // 更新 package 语句
-                existingPackageStatement.replace(packageStatement)
-            }
-        }
-    }
-
-    private fun updateClassComment(
-        metadata: EntityDescMetadata,
-        psiElementFactory: PsiElementFactory,
-        psiClass: PsiClass
-    ) {
-        // Update class comment
-        val classCommentText = "/**\n" +
-                " * ${metadata.desc}\n" +
-                " *\n" +
-                " * 文件由鹏业软件模型工具生成(模板名称：JavaAdv),一般不应直接修改此文件.\n" +
-                " * Copyright (C) 2008 - 鹏业软件公司\n" +
-                " */"
-        val classComment = psiElementFactory.createCommentFromText(
-            classCommentText, psiClass
-        )
-        // 检查是否已经存在类似的类注释
-        val existingClassComment = psiClass.firstChild as? PsiComment
-
-        // 如果不存在类注释，或者现有的注释内容与新的注释内容不同，则添加或更新
-        if (existingClassComment == null || existingClassComment.text != classCommentText) {
-            if (existingClassComment != null) {
-                // 如果存在类注释但内容不同，则替换
-                existingClassComment.replace(classComment)
-            } else {
-                // 如果不存在类注释，则添加
-                psiClass.addBefore(classComment, psiClass.firstChild)
-            }
-        }
-    }
 
     override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
         val psiElementFactory = PsiElementFactory.getInstance(psiClass.project)
