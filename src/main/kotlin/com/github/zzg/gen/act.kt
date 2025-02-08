@@ -53,15 +53,17 @@ class GenAnAction : AnAction() {
             // 需要解析
             val metadata = parseEntityDescAnnotation(psiClass)!!
 
-            val file = EntityGenerator(Context(MyPluginSettings(),metadata,psiClass, project)).generate()!!
+            val context = Context(MyPluginSettings(), metadata, psiClass, project)
+            val file = EntityGenerator(context).generate()!!
 //            val project = psiFile.project
-
+            val qp = EntityQueryParaGenerator(context).generate()!!
             // 在写操作上下文中执行格式化
             WriteCommandAction.runWriteCommandAction(project) {
                 // 获取 CodeStyleManager 实例
                 val codeStyleManager = CodeStyleManager.getInstance(project)
                 // 对整个 PsiFile 进行格式化
                 codeStyleManager.reformat(file)
+                codeStyleManager.reformat(qp)
             }
         } else {
             Messages.showInfoMessage("The class does not contain the annotation: $targetAnnotation", "Info")
