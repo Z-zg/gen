@@ -43,6 +43,18 @@ class BaseSvrGenerator(
             ?: createNewClass(module, metadata)
     }
 
+    override fun updateClassComment(
+        metadata: EntityDescMetadata,
+        psiElementFactory: PsiElementFactory,
+        psiClass: PsiClass
+    ) {
+        val classCommentText = """/*
+            * ${metadata.desc}基础服务
+            *    Copyright (C) 2008 - 鹏业软件公司
+            */"""
+        updateClassComment(psiElementFactory, classCommentText, psiClass)
+    }
+
     override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {
         val psiElementFactory = PsiElementFactory.getInstance(psiClass.project)
         // 更新包声明
@@ -62,7 +74,7 @@ class BaseSvrGenerator(
     ) {
         val daoFieldName = metadata.className.decapitalizeFirstLetter() + "Dao"
         val daoFieldType = "I${metadata.className}Dao"
-        val fieldCode = """@Autowired
+        val fieldCode = """@org.springframework.beans.factory.annotation.Autowired
     protected $daoFieldType $daoFieldName;"""
         if (psiClass.fields.none { it.name == daoFieldName }) {
             psiClass.add(factory.createFieldFromText(fieldCode, psiClass))
@@ -92,38 +104,69 @@ class BaseSvrGenerator(
         generateQueryCountMethod(psiClass, metadata, factory)
     }
 
+    /**
+     * 生成新增方法。
+     */
     private fun generateAddMethod(
         psiClass: PsiClass,
         metadata: EntityDescMetadata,
         factory: PsiElementFactory
     ) {
         val methodName = "add${metadata.className}"
-        val methodCode = """@Override
-    public int $methodName(String uid, ${metadata.className} item) {
-        AssertUtils.ThrowArgNullException(item, "${metadata.desc}");
-        return ${metadata.className.decapitalizeFirstLetter()}Dao.insert(item);
-    }"""
+        val methodCode = """
+            /**
+             * 新增 ${metadata.desc}
+             *
+             * @param userId 用户id
+             * @param item   ${metadata.desc} 对象
+             * @return 受影响的行数
+             * @throws IllegalArgumentException 如果 {@code item} 为 null
+             */
+            @Override
+            public int $methodName(String userId, ${metadata.className} item) {
+                pengesoft.utils.AssertUtils.ThrowArgNullException(item, "${metadata.desc}");
+                return ${metadata.className.decapitalizeFirstLetter()}Dao.insert(item);
+            }
+        """.trimIndent()
+
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
         }
     }
 
+    /**
+     * 生成新增列表方法。
+     */
     private fun generateAddListMethod(
         psiClass: PsiClass,
         metadata: EntityDescMetadata,
         factory: PsiElementFactory
     ) {
         val methodName = "add${metadata.className}List"
-        val methodCode = """@Override
-    public int $methodName(String uid, List<${metadata.className}> list) {
-        AssertUtils.ThrowArgNullException(list, "${metadata.desc}", true);
-        return ${metadata.className.decapitalizeFirstLetter()}Dao.insertList(list);
-    }"""
+        val methodCode = """
+            /**
+             * 新增 ${metadata.desc} 列表
+             *
+             * @param userId 用户id
+             * @param list   ${metadata.desc} 列表
+             * @return 受影响的行数
+             * @throws IllegalArgumentException 如果 {@code list} 为 null 或为空
+             */
+            @Override
+            public int $methodName(String userId, java.util.List<${metadata.className}> list) {
+                pengesoft.utils.AssertUtils.ThrowArgNullException(list, "${metadata.desc}", true);
+                return ${metadata.className.decapitalizeFirstLetter()}Dao.insertList(list);
+            }
+        """.trimIndent()
+
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
         }
     }
 
+    /**
+     * 生成删除方法。
+     */
     private fun generateRemoveMethod(
         psiClass: PsiClass,
         metadata: EntityDescMetadata,
@@ -134,26 +177,42 @@ class BaseSvrGenerator(
         val flagDelField = metadata.fields.find { it.field == "flagDel" }
         val deleteLogic = if (flagDelField != null) {
             """
-        detail.setFlagDel(true);
-        return ${metadata.className.decapitalizeFirstLetter()}Dao.update(detail);
+                detail.setFlagDel(true);
+                return ${metadata.className.decapitalizeFirstLetter()}Dao.update(detail);
             """.trimIndent()
         } else {
             """
-        return ${metadata.className.decapitalizeFirstLetter()}Dao.delete(item);
+                return ${metadata.className.decapitalizeFirstLetter()}Dao.delete(item);
             """.trimIndent()
         }
-        val methodCode = """@Override
-    public int $methodName(String uid, ${metadata.className} item) {
-        AssertUtils.ThrowArgNullException(item, "${metadata.desc}");
-        AssertUtils.ThrowArgNullException(item.get${keyField.capitalizeFirstLetter()}(), "${metadata.desc}Id");
-        ${metadata.className} detail = get${metadata.className}Detail(uid, item.get${keyField.capitalizeFirstLetter()}());
-        $deleteLogic
-    }"""
+
+        val methodCode = """/**
+             * 删除 ${metadata.desc}
+             *
+             * 如果存在逻辑删除字段，则设置删除标志；否则直接删除记录。
+             *
+             * @param userId 用户id
+             * @param item   ${metadata.desc} 对象
+             * @return 受影响的行数
+             * @throws IllegalArgumentException 如果 {@code item} 或其主键为 null
+             */
+            @Override
+            public int $methodName(String userId, ${metadata.className} item) {
+                pengesoft.utils.AssertUtils.ThrowArgNullException(item, "${metadata.desc}");
+                pengesoft.utils.AssertUtils.ThrowArgNullException(item.get${keyField.capitalizeFirstLetter()}(), "${metadata.desc}Id");
+                ${metadata.className} detail = get${metadata.className}Detail(userId, item.get${keyField.capitalizeFirstLetter()}());
+                $deleteLogic
+            }
+        """.trimIndent()
+
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
         }
     }
 
+    /**
+     * 生成删除列表方法。
+     */
     private fun generateRemoveListMethod(
         psiClass: PsiClass,
         metadata: EntityDescMetadata,
@@ -163,24 +222,39 @@ class BaseSvrGenerator(
         val flagDelField = metadata.fields.find { it.field == "flagDel" }
         val deleteLogic = if (flagDelField != null) {
             """
-        list.forEach(v -> v.setFlagDel(true));
-        ${metadata.className.decapitalizeFirstLetter()}Dao.updateList(list);
+                list.forEach(v -> v.setFlagDel(true));
+                ${metadata.className.decapitalizeFirstLetter()}Dao.updateList(list);
             """.trimIndent()
         } else {
             """
-        ${metadata.className.decapitalizeFirstLetter()}Dao.deleteList(list);
+                ${metadata.className.decapitalizeFirstLetter()}Dao.deleteList(list);
             """.trimIndent()
         }
-        val methodCode = """@Override
-    public void $methodName(String uid, List<${metadata.className}> list) {
-        AssertUtils.ThrowArgNullException(list, "${metadata.desc}", true);
-        $deleteLogic
-    }"""
+
+        val methodCode = """/**
+             * 删除 ${metadata.desc} 列表
+             *
+             * 如果存在逻辑删除字段，则批量设置删除标志；否则直接删除记录。
+             *
+             * @param userId 用户id
+             * @param list   ${metadata.desc} 列表
+             * @throws IllegalArgumentException 如果 {@code list} 为 null 或为空
+             */
+            @Override
+            public void $methodName(String userId, java.util.List<${metadata.className}> list) {
+                pengesoft.utils.AssertUtils.ThrowArgNullException(list, "${metadata.desc}", true);
+                $deleteLogic
+            }
+        """.trimIndent()
+
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
         }
     }
 
+    /**
+     * 生成修改方法。
+     */
     private fun generateUpdateMethod(
         psiClass: PsiClass,
         metadata: EntityDescMetadata,
@@ -188,33 +262,58 @@ class BaseSvrGenerator(
     ) {
         val methodName = "update${metadata.className}"
         val keyField = metadata.fields.find { it.primary }?.field ?: "id"
-        val methodCode = """@Override
-    public int $methodName(String uid, ${metadata.className} item) {
-        AssertUtils.ThrowArgNullException(item, "${metadata.desc}");
-        AssertUtils.ThrowArgNullException(item.get${keyField.capitalizeFirstLetter()}(), "${metadata.desc}Id");
-        return ${metadata.className.decapitalizeFirstLetter()}Dao.update(item);
-    }"""
+        val methodCode = """/**
+             * 修改 ${metadata.desc}
+             *
+             * @param userId 用户id
+             * @param item   ${metadata.desc} 对象
+             * @return 受影响的行数
+             * @throws IllegalArgumentException 如果 {@code item} 或其主键为 null
+             */
+            @Override
+            public int $methodName(String userId, ${metadata.className} item) {
+                pengesoft.utils.AssertUtils.ThrowArgNullException(item, "${metadata.desc}");
+                pengesoft.utils.AssertUtils.ThrowArgNullException(item.get${keyField.capitalizeFirstLetter()}(), "${metadata.desc}Id");
+                return ${metadata.className.decapitalizeFirstLetter()}Dao.update(item);
+            }
+        """.trimIndent()
+
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
         }
     }
 
+    /**
+     * 生成修改列表方法。
+     */
     private fun generateUpdateListMethod(
         psiClass: PsiClass,
         metadata: EntityDescMetadata,
         factory: PsiElementFactory
     ) {
         val methodName = "update${metadata.className}List"
-        val methodCode = """@Override
-    public void $methodName(String uid, List<${metadata.className}> list) {
-        AssertUtils.ThrowArgNullException(list, "${metadata.desc}", true);
-        ${metadata.className.decapitalizeFirstLetter()}Dao.updateList(list);
-    }"""
+        val methodCode = """/**
+             * 修改 ${metadata.desc} 列表
+             *
+             * @param userId 用户id
+             * @param list   ${metadata.desc} 列表
+             * @throws IllegalArgumentException 如果 {@code list} 为 null 或为空
+             */
+            @Override
+            public void $methodName(String userId, java.util.List<${metadata.className}> list) {
+                pengesoft.utils.AssertUtils.ThrowArgNullException(list, "${metadata.desc}", true);
+                ${metadata.className.decapitalizeFirstLetter()}Dao.updateList(list);
+            }
+        """.trimIndent()
+
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
         }
     }
 
+    /**
+     * 生成查询详情方法。
+     */
     private fun generateGetDetailMethod(
         psiClass: PsiClass,
         metadata: EntityDescMetadata,
@@ -222,18 +321,31 @@ class BaseSvrGenerator(
     ) {
         val methodName = "get${metadata.className}Detail"
         val keyField = metadata.fields.find { it.primary }?.field ?: "id"
-        val methodCode = """@Override
-    public ${metadata.className} $methodName(String uid, String keyId) {
-        AssertUtils.ThrowArgNullException(keyId, "${metadata.desc}详情标识", true);
-        ${metadata.className} detail = new ${metadata.className}();
-        detail.set${keyField.capitalizeFirstLetter()}(keyId);
-        return ${metadata.className.decapitalizeFirstLetter()}Dao.getDetail(detail);
-    }"""
+        val methodCode = """/**
+             * 查询 ${metadata.desc} 详情
+             *
+             * @param userId 用户id
+             * @param keyId  主键标识
+             * @return ${metadata.desc} 详情
+             * @throws IllegalArgumentException 如果 {@code keyId} 为 null 或为空
+             */
+            @Override
+            public ${metadata.className} $methodName(String userId, String keyId) {
+                pengesoft.utils.AssertUtils.ThrowArgNullException(keyId, "${metadata.desc}详情标识", true);
+                ${metadata.className} detail = new ${metadata.className}();
+                detail.set${keyField.capitalizeFirstLetter()}(keyId);
+                return ${metadata.className.decapitalizeFirstLetter()}Dao.getDetail(detail);
+            }
+        """.trimIndent()
+
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
         }
     }
 
+    /**
+     * 生成查询列表方法。
+     */
     private fun generateQueryListMethod(
         psiClass: PsiClass,
         metadata: EntityDescMetadata,
@@ -241,22 +353,37 @@ class BaseSvrGenerator(
     ) {
         val methodName = "query${metadata.className}List"
         val queryParaType = "${metadata.className}QueryPara"
-        val methodCode = """@Override
-    public ${metadata.className}List $methodName(String uid, $queryParaType para, int startIndex, int maxSize, boolean retTotal) {
-        if (para == null) {
-            para = new $queryParaType();
-        }
-        ${metadata.className}List list = new ${metadata.className}List(${metadata.className.decapitalizeFirstLetter()}Dao.queryList(para, startIndex, maxSize));
-        if (retTotal) {
-            list.setTotalCount(${metadata.className.decapitalizeFirstLetter()}Dao.queryCount(para));
-        }
-        return list;
-    }"""
+        val methodCode = """/**
+             * 查询 ${metadata.desc} 列表
+             *
+             * @param userId      用户id
+             * @param para        查询参数
+             * @param startIndex  起始索引
+             * @param maxSize     最大返回行数
+             * @param retTotal    是否返回总数
+             * @return ${metadata.desc} 列表
+             */
+            @Override
+            public ${metadata.className}List $methodName(String userId, $queryParaType para, int startIndex, int maxSize, boolean retTotal) {
+                if (para == null) {
+                    para = new $queryParaType();
+                }
+                ${metadata.className}List list = new ${metadata.className}List(${metadata.className.decapitalizeFirstLetter()}Dao.queryList(para, startIndex, maxSize));
+                if (retTotal) {
+                    list.setTotalCount(${metadata.className.decapitalizeFirstLetter()}Dao.queryCount(para));
+                }
+                return list;
+            }
+        """.trimIndent()
+
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
         }
     }
 
+    /**
+     * 生成查询总数方法。
+     */
     private fun generateQueryCountMethod(
         psiClass: PsiClass,
         metadata: EntityDescMetadata,
@@ -264,13 +391,22 @@ class BaseSvrGenerator(
     ) {
         val methodName = "query${metadata.className}Count"
         val queryParaType = "${metadata.className}QueryPara"
-        val methodCode = """@Override
-    public int $methodName(String uid, $queryParaType para) {
-        if (para == null) {
-            para = new $queryParaType();
-        }
-        return ${metadata.className.decapitalizeFirstLetter()}Dao.queryCount(para);
-    }"""
+        val methodCode = """/**
+             * 查询 ${metadata.desc} 总数
+             *
+             * @param userId 用户id
+             * @param para   查询参数
+             * @return ${metadata.desc} 总数
+             */
+            @Override
+            public int $methodName(String userId, $queryParaType para) {
+                if (para == null) {
+                    para = new $queryParaType();
+                }
+                return ${metadata.className.decapitalizeFirstLetter()}Dao.queryCount(para);
+            }
+        """.trimIndent()
+
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
         }

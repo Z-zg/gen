@@ -5,10 +5,7 @@ import com.github.zzg.gen.EntityDescMetadata
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.module.Module
-import com.intellij.psi.PsiClass
-import com.intellij.psi.PsiElementFactory
-import com.intellij.psi.PsiFileFactory
-import com.intellij.psi.PsiJavaFile
+import com.intellij.psi.*
 
 class IDaoGenerator(
     override val context: Context
@@ -37,6 +34,21 @@ class IDaoGenerator(
     override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
         return findClassInModule(module, metadata.pkg, "I${metadata.className}Dao")
             ?: createNewClass(module, metadata)
+    }
+
+    override fun updateClassComment(
+        metadata: EntityDescMetadata,
+        psiElementFactory: PsiElementFactory,
+        psiClass: PsiClass
+    ) {
+        // Update class comment
+        val classCommentText = "/**\n" +
+                " * ${metadata.desc} 数据访问接口\n" +
+                " *\n" +
+                " * 文件由鹏业软件模型工具生成(模板名称：JavaDaoIntf),一般不应直接修改此文件.\n" +
+                " * Copyright (C) 2008 - 鹏业软件公司\n" +
+                " */"
+        updateClassComment(psiElementFactory, classCommentText, psiClass)
     }
 
     override fun updateClass(psiClass: PsiClass, metadata: EntityDescMetadata) {

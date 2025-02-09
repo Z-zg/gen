@@ -5,14 +5,26 @@ import com.github.zzg.gen.EntityDescMetadata
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.module.Module
-import com.intellij.psi.PsiClass
-import com.intellij.psi.PsiElementFactory
-import com.intellij.psi.PsiFileFactory
-import com.intellij.psi.PsiJavaFile
+import com.intellij.psi.*
 
 class QueryListGenerator(
     override val context: Context
 ) : Generator {
+
+    override fun updateClassComment(
+        metadata: EntityDescMetadata,
+        psiElementFactory: PsiElementFactory,
+        psiClass: PsiClass
+    ) {
+        // Update class comment
+        val classCommentText = "/**\n" +
+                " * ${metadata.desc}列表 的摘要说明\n" +
+                " *\n" +
+                " * 文件由鹏业软件模型工具生成(模板名称：JavaListAdv),一般不应直接修改此文件.\n" +
+                " * Copyright (C) 2008 - 鹏业软件公司\n" +
+                " */"
+        updateClassComment(psiElementFactory, classCommentText, psiClass)
+    }
 
     override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
         WriteCommandAction.runWriteCommandAction(module.project) {
@@ -72,7 +84,7 @@ class QueryListGenerator(
              *
              * @param c 已存在的集合
              */
-            public ${psiClass.name}(Collection<${metadata.className}> c) {
+            public ${psiClass.name}(java.util.Collection<${metadata.className}> c) {
                 super(c);
             }
         """.trimIndent()

@@ -89,11 +89,11 @@ class IBaseSvrGenerator(
             /**
              * 新增${metadata.desc}
              *
-             * @param uid   用户id
+             * @param userId   用户id
              * @param item  ${metadata.desc}
              * @return rows
              */
-            int $methodName(String uid, ${metadata.className} item);
+            int $methodName(String userId, ${metadata.className} item);
         """.trimIndent()
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
@@ -110,11 +110,11 @@ class IBaseSvrGenerator(
             /**
              * 新增${metadata.desc}列表
              *
-             * @param uid   用户id
+             * @param userId   用户id
              * @param list  ${metadata.desc}列表
              * @return rows
              */
-            int $methodName(String uid, List<${metadata.className}> list);
+            int $methodName(String userId, java.util.List<${metadata.className}> list);
         """.trimIndent()
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
@@ -131,11 +131,11 @@ class IBaseSvrGenerator(
             /**
              * 删除${metadata.desc}
              *
-             * @param uid   用户id
+             * @param userId   用户id
              * @param item  ${metadata.desc}
              * @return rows
              */
-            int $methodName(String uid, ${metadata.className} item);
+            int $methodName(String userId, ${metadata.className} item);
         """.trimIndent()
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
@@ -152,10 +152,10 @@ class IBaseSvrGenerator(
             /**
              * 删除${metadata.desc}列表
              *
-             * @param uid   用户id
+             * @param userId   用户id
              * @param list  ${metadata.desc}列表
              */
-            void $methodName(String uid, List<${metadata.className}> list);
+            void $methodName(String userId, java.util.List<${metadata.className}> list);
         """.trimIndent()
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
@@ -172,11 +172,11 @@ class IBaseSvrGenerator(
             /**
              * 修改${metadata.desc}
              *
-             * @param uid   用户id
+             * @param userId   用户id
              * @param item  ${metadata.desc}
              * @return rows
              */
-            int $methodName(String uid, ${metadata.className} item);
+            int $methodName(String userId, ${metadata.className} item);
         """.trimIndent()
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
@@ -193,10 +193,10 @@ class IBaseSvrGenerator(
             /**
              * 修改${metadata.desc}列表
              *
-             * @param uid   用户id
+             * @param userId   用户id
              * @param list  ${metadata.desc}列表
              */
-            void $methodName(String uid, List<${metadata.className}> list);
+            void $methodName(String userId, java.util.List<${metadata.className}> list);
         """.trimIndent()
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
@@ -214,11 +214,11 @@ class IBaseSvrGenerator(
             /**
              * 查询${metadata.desc}详情
              *
-             * @param uid    用户id
+             * @param userId    用户id
              * @param keyId  标识符
              * @return ${metadata.desc}详情
              */
-            ${metadata.className} $methodName(String uid, String keyId);
+            ${metadata.className} $methodName(String userId, String keyId);
         """.trimIndent()
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
@@ -236,14 +236,14 @@ class IBaseSvrGenerator(
             /**
              * 查询${metadata.desc}详情列表
              *
-             * @param uid         用户id
+             * @param userId         用户id
              * @param para        查询参数
              * @param startIndex  起始索引
              * @param maxSize     最大返回行数
              * @param retTotal    是否返回总数
              * @return ${metadata.desc}列表
              */
-            ${metadata.className}List $methodName(String uid, $queryParaType para, int startIndex, int maxSize, boolean retTotal);
+            ${metadata.className}List $methodName(String userId, $queryParaType para, int startIndex, int maxSize, boolean retTotal);
         """.trimIndent()
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))
@@ -261,11 +261,11 @@ class IBaseSvrGenerator(
             /**
              * 查询${metadata.desc}总数
              *
-             * @param uid   用户id
+             * @param userId   用户id
              * @param para  查询参数
              * @return ${metadata.desc}总数
              */
-            int $methodName(String uid, $queryParaType para);
+            int $methodName(String userId, $queryParaType para);
         """.trimIndent()
         if (psiClass.methods.none { it.name == methodName }) {
             psiClass.add(factory.createMethodFromText(methodCode, psiClass))

@@ -45,7 +45,7 @@ class EntityGenerator(
     ) {
         // Add fields
         metadata.fields.forEachIndexed { index, field ->
-            field?.let {
+            field.let {
                 val existingField = psiClass.fields.find { f -> f.name == it.field }
                 if (existingField == null) {
                     val newField = psiElementFactory.createField(
@@ -59,7 +59,7 @@ class EntityGenerator(
                     if (index == 0) {
                         psiClass.add(newField)
                     } else {
-                        val last = psiClass.fields.find { f -> f.name == metadata.fields[index - 1]?.field }
+                        val last = psiClass.fields.find { f -> f.name == metadata.fields[index - 1].field }
                         if (last == null) {
                             psiClass.add(newField)
                         } else {
@@ -75,9 +75,7 @@ class EntityGenerator(
 
         // Add getters and setters
         metadata.fields.forEachIndexed { index, field ->
-            if (field != null) {
-                genGetterAndSetter(field, index, metadata, psiElementFactory, psiClass)
-            }
+            genGetterAndSetter(field, index, metadata, psiElementFactory, psiClass)
         }
 
         // Add clear method
@@ -122,7 +120,7 @@ class EntityGenerator(
         psiClass.add(toStringMethod)
         // delete unclear field and method
         psiClass.fields.forEach { field ->
-            metadata.fields.none { (it?.field ?: "") == field.name }.ifTrue {
+            metadata.fields.none { it.field == field.name }.ifTrue {
                 field.delete()
                 val prefix = if (field.type.canonicalText == "boolean") "is" else "get"
                 psiClass.methods.filter { it.name == prefix + field.name }.forEach { it.delete() }
@@ -180,7 +178,7 @@ class EntityGenerator(
             if (index == 0) {
                 psiClass.add(getter)
             } else {
-                val fieldName1 = metadata.fields[index - 1]?.field ?: ""
+                val fieldName1 = metadata.fields[index - 1].field
                 val setter1 = psiClass.methods.find { it.name == "set$fieldName1" }
                 if (setter1 == null) {
                     psiClass.add(getter)

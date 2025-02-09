@@ -9,7 +9,9 @@ import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.ui.Messages
 import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.codeStyle.CodeStyleManager
+import com.intellij.psi.codeStyle.JavaCodeStyleManager
 import com.intellij.psi.util.PsiTreeUtil
 
 class GenAnAction : AnAction() {
@@ -56,8 +58,10 @@ class GenAnAction : AnAction() {
 
             val context = Context(MyPluginSettings(), metadata, psiClass, project)
             val file = EntityGenerator(context).generate()!!
-//            val project = psiFile.project
+
             val qp = EntityQueryParaGenerator(context).generate()!!
+            val id = IDaoGenerator(context).generate()!!
+            val d = DaoGenerator(context).generate()!!
 
             val li = QueryListGenerator(context).generate()!!
 
@@ -65,16 +69,21 @@ class GenAnAction : AnAction() {
 
             val bsvr = BaseSvrGenerator(context).generate()!!
 
+            val arr = listOf(file,d, qp, id, li, ibsvr, bsvr)
             // 在写操作上下文中执行格式化
             WriteCommandAction.runWriteCommandAction(project) {
                 // 获取 CodeStyleManager 实例
                 val codeStyleManager = CodeStyleManager.getInstance(project)
+                val javaCodeStyleManager = JavaCodeStyleManager.getInstance(project)
                 // 对整个 PsiFile 进行格式化
-                codeStyleManager.reformat(file)
-                codeStyleManager.reformat(qp)
-                codeStyleManager.reformat(li)
-                codeStyleManager.reformat(ibsvr)
-                codeStyleManager.reformat(bsvr)
+                arr.forEach {
+                    it.virtualFile.refresh(false, false)
+                    if (it is PsiJavaFile) {
+                        javaCodeStyleManager.optimizeImports(file)
+                        javaCodeStyleManager.shortenClassReferences(file)
+                    }
+                    codeStyleManager.reformat(it)
+                }
             }
         } else {
             Messages.showInfoMessage("The class does not contain the annotation: $targetAnnotation", "Info")

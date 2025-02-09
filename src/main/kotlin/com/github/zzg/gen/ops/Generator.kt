@@ -86,6 +86,14 @@ interface Generator {
                 " * 文件由鹏业软件模型工具生成(模板名称：JavaAdv),一般不应直接修改此文件.\n" +
                 " * Copyright (C) 2008 - 鹏业软件公司\n" +
                 " */"
+        updateClassComment(psiElementFactory, classCommentText, psiClass)
+    }
+
+    fun updateClassComment(
+        psiElementFactory: PsiElementFactory,
+        classCommentText: String,
+        psiClass: PsiClass
+    ) {
         val classComment = psiElementFactory.createCommentFromText(
             classCommentText, psiClass
         )
@@ -145,6 +153,8 @@ interface Generator {
         assert(psiClass.containingFile.virtualFile != null)
         WriteCommandAction.runWriteCommandAction(module.project) {
             updateClass(psiClass, context.metadata)
+            PsiDocumentManager.getInstance(psiClass.project).commitAllDocuments()
+            psiClass.containingFile.virtualFile?.refresh(false, false)
         }
         return findOrCreateClass(module, context.metadata).containingFile
     }

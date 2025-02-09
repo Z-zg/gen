@@ -66,33 +66,41 @@ class EntityQueryParaGenerator(
         factory: PsiElementFactory
     ) {
         // 遍历字段并生成 QueryAttr_ 和 OrderAttr_ 常量
-        metadata.fields.filterNotNull().forEachIndexed { index, field ->
+        metadata.fields.toList().forEachIndexed { index, field ->
             // 获取前一个字段的 QueryAttr_ 或 OrderAttr_ 常量名称
-            val previousConstName = if (index > 0) {
-                val previousField = metadata.fields[index - 1]
-                if (previousField?.queryable == true) {
-                    "QueryAttr_${previousField.field.capitalizeFirstLetter()}"
-                } else if (previousField?.sortable == true) {
-                    "OrderAttr_${previousField.field.capitalizeFirstLetter()}"
-                } else {
-                    null
+            var previousConstName: String? = null
+            var previousConstName1: String? = null
+            if (index > 1) {
+                for (i in (index - 1) downTo 1) {
+                    if (metadata.fields[i].queryable) {
+                        if (previousConstName == null) {
+                            previousConstName = metadata.fields[i].field
+                        }
+                    }
+                    if (metadata.fields[i].sortable) {
+                        if (previousConstName1 == null) {
+                            previousConstName1 = metadata.fields[i].field
+                        }
+                    }
                 }
-            } else {
-                null
             }
-
             // 如果字段是 queryable，则生成 QueryAttr_ 常量
             if (field.queryable) {
                 val constName = "QueryAttr_${field.field.capitalizeFirstLetter()}"
-                val constText = "public static final String $constName = \"${field.field}\";"
+                val constText = "/**\n" +
+                        "* 常数 查询属性名(${field.desc}).\n" +
+                        "*/\n" +
+                        "public static final String $constName = \"${field.field}\";"
                 addConstantAfterPrevious(psiClass, constText, factory, previousConstName)
             }
 
             // 如果字段是 sortable，则生成 OrderAttr_ 常量
             if (field.sortable) {
                 val constName = "OrderAttr_${field.field.capitalizeFirstLetter()}"
-                val constText = "public static final String $constName = \"${field.field}\";"
-                addConstantAfterPrevious(psiClass, constText, factory, previousConstName)
+                val constText = "/**\n" +
+                        "                     * 常数 排序属性名(${field.desc}).\n" +
+                        "                     */\n public static final String $constName = \"${field.field}\";"
+                addConstantAfterPrevious(psiClass, constText, factory, previousConstName1)
             }
         }
     }
@@ -114,7 +122,7 @@ class EntityQueryParaGenerator(
             val previousConst = psiClass.fields.find { it.name == previousConstName }
             if (previousConst != null) {
                 // 在前一个常量后面插入新常量
-                previousConst.parent.addAfter(newConst, previousConst)
+                previousConst.addAfter(newConst, previousConst.lastChild)
             } else {
                 // 如果找不到前一个常量（理论上不应该发生），直接添加到类中
                 psiClass.add(newConst)
@@ -128,13 +136,23 @@ class EntityQueryParaGenerator(
         factory: PsiElementFactory
     ) {
         // 默认构造方法
-        val defaultConstructor = """public ${psiClass.name}() {
+        val defaultConstructor = """/**
+     * 默认构造方法
+     */
+     public ${psiClass.name}() {
                 this(null, null, false);
             }
         """.trimIndent()
 
         // 带参构造方法
-        val paramConstructor = """public ${psiClass.name}(${metadata.className} data, String order, boolean isAse) {
+        val paramConstructor = """/**
+     * 构造函数,指定参数对象及排序字段
+     *
+     * @param data  查询参数对象
+     * @param order 排序字段
+     * @param isAse true升序，false降序
+     */
+     public ${psiClass.name}(${metadata.className} data, String order, boolean isAse) {
                 SetQueryPara(data, order, isAse);
             }
         """.trimIndent()
@@ -154,7 +172,7 @@ class EntityQueryParaGenerator(
         val methodBody = buildString {
             appendLine("if (data != null) {")
             metadata.fields.forEach { field ->
-                field?.let {
+                field.let {
                     if (it.queryable)
                         appendLine("setParamBy${it.field.capitalizeFirstLetter()}(data.get${it.field.capitalizeFirstLetter()}());")
                 }
@@ -163,14 +181,21 @@ class EntityQueryParaGenerator(
             appendLine("if (!StringHelper.isNullOrEmpty(order)) addOrderBy(order, isAse);")
         }
 
-        val methodCode = """public void SetQueryPara(${metadata.className} data, String order, boolean isAse) {
+        val methodCode = """/**
+     * 指定查询参数对象及排序字段
+     *
+     * @param data  查询参数对象
+     * @param order 排序字段
+     * @param isAse true升序，false降序
+     */
+     public void SetQueryPara(${metadata.className} data, String order, boolean isAse) {
                 $methodBody
             }
         """.trimIndent()
 
         psiClass.methods.find { it.name == "SetQueryPara" }?.delete()
         val pa = psiClass.constructors.find { it.parameterList.parameters.size > 1 }!!
-        pa.parent.addAfter(factory.createMethodFromText(methodCode, psiClass), pa.lastChild)
+        pa.addAfter(factory.createMethodFromText(methodCode, psiClass), pa.lastChild)
     }
 
     private fun generateParamMethods(
@@ -179,7 +204,7 @@ class EntityQueryParaGenerator(
         factory: PsiElementFactory
     ) {
         // 需要完善，
-        metadata.fields.filterNotNull().forEachIndexed { index, field ->
+        metadata.fields.toList().forEachIndexed { index, field ->
             if (field.queryable) { // 只处理 queryable 为 true 的字段
                 when (field.type.canonicalText) {
                     "java.lang.String" -> generateStringParamMethods(metadata, field, psiClass, factory, index)
@@ -219,7 +244,7 @@ class EntityQueryParaGenerator(
     ) {
         val previousMethodName = if (index > 0) {
             val previousField = metadata.fields[index - 1]
-            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+            "setParamBy${previousField.field.capitalizeFirstLetter()}"
         } else {
             null
         }
@@ -227,7 +252,11 @@ class EntityQueryParaGenerator(
         // Basic setter
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}(String ${field.field}) {
+            """/**
+             * 增加用${field.desc}匹配条件(target like ${field.field})，key:${field.field}.
+             * 
+             * @param ${field.field} ${field.desc}匹配条件参数
+             */public void setParamBy${field.field.capitalizeFirstLetter()}(String ${field.field}) {
             addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
         }
         """,
@@ -239,7 +268,11 @@ class EntityQueryParaGenerator(
         // InEmpty处理
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}InEmpty(String ${field.field}) {
+            """/**
+             * 增加用${field.desc}匹配条件(${field.field}为empty时也会加入此条件)，不空时(target like ${field.field})，key:${field.field}，为空时(target is null or target = '')，key:${field.field}.
+             * 
+             * @param ${field.field} ${field.desc}匹配条件参数
+             */public void setParamBy${field.field.capitalizeFirstLetter()}InEmpty(String ${field.field}) {
             put(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
         }
         """,
@@ -251,7 +284,11 @@ class EntityQueryParaGenerator(
         // Enum版本
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}_Enum(String... ${field.field}s) {
+            """/**
+             * 增加${field.desc}枚举条件(target in (${field.field}s))，key:${field.field}_Enum.
+             * 
+             * @param ${field.field}s ${field.desc}数组条件参数
+             */public void setParamBy${field.field.capitalizeFirstLetter()}_Enum(String... ${field.field}s) {
             addParameterByEnum(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field}s);
         }
         """,
@@ -270,7 +307,7 @@ class EntityQueryParaGenerator(
     ) {
         val previousMethodName = if (index > 0) {
             val previousField = metadata.fields[index - 1]
-            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+            "setParamBy${previousField.field.capitalizeFirstLetter()}"
         } else {
             null
         }
@@ -278,7 +315,11 @@ class EntityQueryParaGenerator(
         // Basic setter
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}(boolean ${field.field}) {
+            """/**
+             * 增加用${field.desc}匹配条件(target = ${field.field})，key:${field.field}.
+             * 
+             * @param ${field.field} ${field.desc}匹配条件参数
+             */public void setParamBy${field.field.capitalizeFirstLetter()}(boolean ${field.field}) {
             addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
         }
         """,
@@ -298,7 +339,7 @@ class EntityQueryParaGenerator(
         val type = field.type.canonicalText.removePrefix("java.lang.")
         val previousMethodName = if (index > 0) {
             val previousField = metadata.fields[index - 1]
-            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+            "setParamBy${previousField.field.capitalizeFirstLetter()}"
         } else {
             null
         }
@@ -306,7 +347,11 @@ class EntityQueryParaGenerator(
         // Basic setter
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}($type ${field.field}) {
+            """/**
+             * 增加用${field.desc}匹配条件(target = ${field.field})，key:${field.field}.
+             * 
+             * @param ${field.field} ${field.desc}匹配条件参数
+             */public void setParamBy${field.field.capitalizeFirstLetter()}($type ${field.field}) {
             addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
         }
         """,
@@ -318,7 +363,11 @@ class EntityQueryParaGenerator(
         // 包含0值
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}IncZero($type ${field.field}) {
+            """/**
+             * 增加用${field.desc}匹配条件(包含0值)，key:${field.field}.
+             * 
+             * @param ${field.field} ${field.desc}匹配条件参数
+             */public void setParamBy${field.field.capitalizeFirstLetter()}IncZero($type ${field.field}) {
             put(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
         }
         """,
@@ -330,7 +379,11 @@ class EntityQueryParaGenerator(
         // 枚举参数
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}_Enum($type... ${field.field}s) {
+            """/**
+             * 增加${field.desc}枚举条件(target in (${field.field}s))，key:${field.field}_Enum.
+             * 
+             * @param ${field.field}s ${field.desc}数组条件参数
+             */public void setParamBy${field.field.capitalizeFirstLetter()}_Enum($type... ${field.field}s) {
             addParameterByEnum(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field}s);
         }
         """,
@@ -342,7 +395,12 @@ class EntityQueryParaGenerator(
         // 范围查询
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}_Range($type low, $type high) {
+            """/**
+             * 增加用${field.desc}范围匹配条件(target between low and high)，key:${field.field}_Range.
+             * 
+             * @param low  范围下限
+             * @param high 范围上限
+             */public void setParamBy${field.field.capitalizeFirstLetter()}_Range($type low, $type high) {
             addParameterByRange(QueryAttr_${field.field.capitalizeFirstLetter()}, low, high);
         }
         """,
@@ -361,7 +419,7 @@ class EntityQueryParaGenerator(
     ) {
         val previousMethodName = if (index > 0) {
             val previousField = metadata.fields[index - 1]
-            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+            "setParamBy${previousField.field.capitalizeFirstLetter()}"
         } else {
             null
         }
@@ -369,7 +427,11 @@ class EntityQueryParaGenerator(
         // Basic setter
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}(java.util.Date ${field.field}) {
+            """/**
+             * 增加用${field.desc}匹配条件(target like ${field.field})，key:${field.field}.
+             * 
+             * @param ${field.field} ${field.desc}匹配条件参数
+             */public void setParamBy${field.field.capitalizeFirstLetter()}(java.util.Date ${field.field}) {
             addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
         }
         """,
@@ -381,7 +443,12 @@ class EntityQueryParaGenerator(
         // 范围查询
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}_Range(java.util.Date startDate, java.util.Date endDate) {
+            """/**
+             * 增加用${field.desc}范围匹配条件(target between startDate and endDate)，key:${field.field}_Range.
+             * 
+             * @param startDate 起始日期
+             * @param endDate   结束日期
+             */public void setParamBy${field.field.capitalizeFirstLetter()}_Range(java.util.Date startDate, java.util.Date endDate) {
             addParameterByRange(QueryAttr_${field.field.capitalizeFirstLetter()}, startDate, endDate);
         }
         """,
@@ -400,7 +467,7 @@ class EntityQueryParaGenerator(
     ) {
         val previousMethodName = if (index > 0) {
             val previousField = metadata.fields[index - 1]
-            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+            "setParamBy${previousField.field.capitalizeFirstLetter()}"
         } else {
             null
         }
@@ -408,7 +475,11 @@ class EntityQueryParaGenerator(
         // Basic setter
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}(java.math.BigDecimal ${field.field}) {
+            """/**
+             * 增加用${field.desc}匹配条件(target = ${field.field})，key:${field.field}.
+             * 
+             * @param ${field.field} ${field.desc}匹配条件参数
+             */public void setParamBy${field.field.capitalizeFirstLetter()}(java.math.BigDecimal ${field.field}) {
             addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
         }
         """,
@@ -420,7 +491,11 @@ class EntityQueryParaGenerator(
         // 包含0值
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}IncZero(java.math.BigDecimal ${field.field}) {
+            """/**
+             * 增加用${field.desc}匹配条件(包含0值)，key:${field.field}.
+             * 
+             * @param ${field.field} ${field.desc}匹配条件参数
+             */public void setParamBy${field.field.capitalizeFirstLetter()}IncZero(java.math.BigDecimal ${field.field}) {
             put(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
         }
         """,
@@ -432,7 +507,11 @@ class EntityQueryParaGenerator(
         // 枚举参数
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}_Enum(java.math.BigDecimal... ${field.field}s) {
+            """/**
+             * 增加${field.desc}枚举条件(target in (${field.field}s))，key:${field.field}_Enum.
+             * 
+             * @param ${field.field}s ${field.desc}数组条件参数
+             */public void setParamBy${field.field.capitalizeFirstLetter()}_Enum(java.math.BigDecimal... ${field.field}s) {
             addParameterByEnum(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field}s);
         }
         """,
@@ -444,7 +523,12 @@ class EntityQueryParaGenerator(
         // 范围查询
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}_Range(java.math.BigDecimal low, java.math.BigDecimal high) {
+            """/**
+             * 增加用${field.desc}范围匹配条件(target between low and high)，key:${field.field}_Range.
+             * 
+             * @param low  范围下限
+             * @param high 范围上限
+             */public void setParamBy${field.field.capitalizeFirstLetter()}_Range(java.math.BigDecimal low, java.math.BigDecimal high) {
             addParameterByRange(QueryAttr_${field.field.capitalizeFirstLetter()}, low, high);
         }
         """,
@@ -463,7 +547,7 @@ class EntityQueryParaGenerator(
     ) {
         val previousMethodName = if (index > 0) {
             val previousField = metadata.fields[index - 1]
-            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+            "setParamBy${previousField.field.capitalizeFirstLetter()}"
         } else {
             null
         }
@@ -471,7 +555,11 @@ class EntityQueryParaGenerator(
         // Basic setter
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}(DynDataPacket ${field.field}) {
+            """/**
+             * 增加用${field.desc}匹配条件(target = ${field.field})，key:${field.field}.
+             * 
+             * @param ${field.field} ${field.desc}匹配条件参数
+             */public void setParamBy${field.field.capitalizeFirstLetter()}(DynDataPacket ${field.field}) {
             addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
         }
         """,
@@ -490,7 +578,7 @@ class EntityQueryParaGenerator(
     ) {
         val previousMethodName = if (index > 0) {
             val previousField = metadata.fields[index - 1]
-            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+            "setParamBy${previousField.field.capitalizeFirstLetter()}"
         } else {
             null
         }
@@ -498,7 +586,11 @@ class EntityQueryParaGenerator(
         // Basic setter
         addMethodAfterPrevious(
             psiClass,
-            """public void setParamBy${field.field.capitalizeFirstLetter()}(Object ${field.field}) {
+            """/**
+             * 增加用${field.desc}匹配条件(target = ${field.field})，key:${field.field}.
+             * 
+             * @param ${field.field} ${field.desc}匹配条件参数
+             */public void setParamBy${field.field.capitalizeFirstLetter()}(Object ${field.field}) {
             addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
         }
         """,

@@ -5,10 +5,7 @@ import com.github.zzg.gen.EntityDescMetadata
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.module.Module
-import com.intellij.psi.PsiClass
-import com.intellij.psi.PsiElementFactory
-import com.intellij.psi.PsiFileFactory
-import com.intellij.psi.PsiJavaFile
+import com.intellij.psi.*
 
 
 class DaoGenerator(
@@ -52,6 +49,36 @@ class DaoGenerator(
         addDefaultStatementIds(psiClass, metadata, psiElementFactory)
     }
 
+    override fun updateClassComment(
+        metadata: EntityDescMetadata,
+        psiElementFactory: PsiElementFactory,
+        psiClass: PsiClass
+    ) {
+        // Update class comment
+        val classCommentText = "/**\n" +
+                " * ${metadata.desc} 数据访问接口基本实现类\n" +
+                " *\n" +
+                " * 文件由鹏业软件模型工具生成(模板名称：JavaDaoImp),一般不应直接修改此文件.\n" +
+                " * Copyright (C) 2008 - 鹏业软件公司\n" +
+                " */"
+        val classComment = psiElementFactory.createCommentFromText(
+            classCommentText, psiClass
+        )
+        // 检查是否已经存在类似的类注释
+        val existingClassComment = psiClass.firstChild as? PsiComment
+
+        // 如果不存在类注释，或者现有的注释内容与新的注释内容不同，则添加或更新
+        if (existingClassComment == null || existingClassComment.text != classCommentText) {
+            if (existingClassComment != null) {
+                // 如果存在类注释但内容不同，则替换
+                existingClassComment.replace(classComment)
+            } else {
+                // 如果不存在类注释，则添加
+                psiClass.addBefore(classComment, psiClass.firstChild)
+            }
+        }
+    }
+
     private fun addDefaultStatementIds(
         psiClass: PsiClass,
         metadata: EntityDescMetadata,
@@ -72,6 +99,6 @@ class DaoGenerator(
              */
         """.trimIndent()
         val comment = factory.createCommentFromText(commentText, psiClass)
-        psiClass.addBefore(comment, psiClass.firstChild)
+        psiClass.add(comment)
     }
 }
