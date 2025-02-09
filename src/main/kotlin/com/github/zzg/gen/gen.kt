@@ -491,31 +491,61 @@ class EntityQueryParaGenerator(
         metadata: EntityDescMetadata,
         factory: PsiElementFactory
     ) {
-        // 生成 QueryAttr_ 常量
-        var x = 0
-        var y = 0
-        metadata.fields.forEach { field ->
-            field?.let {
-                if (field.queryable) {
-                    val constName = "QueryAttr_${it.field.capitalizeFirstLetter()}"
-                    val constText = "public static final String $constName = \"${it.field}\";"
-                    if (psiClass.fields.none { f -> f.name == constName }) {
-                        psiClass.add(factory.createFieldFromText(constText, psiClass))
-                    }
+        // 遍历字段并生成 QueryAttr_ 和 OrderAttr_ 常量
+        metadata.fields.filterNotNull().forEachIndexed { index, field ->
+            // 获取前一个字段的 QueryAttr_ 或 OrderAttr_ 常量名称
+            val previousConstName = if (index > 0) {
+                val previousField = metadata.fields[index - 1]
+                if (previousField?.queryable == true) {
+                    "QueryAttr_${previousField.field.capitalizeFirstLetter()}"
+                } else if (previousField?.sortable == true) {
+                    "OrderAttr_${previousField.field.capitalizeFirstLetter()}"
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
 
-                }
-                x++
-                if (field.sortable) {
-                    val constName = "OrderAttr_${field.field.capitalizeFirstLetter()}"
-                    val constText = "public static final String $constName = \"${field.field}\";"
-                    if (psiClass.fields.none { f -> f.name == constName }) {
-                        psiClass.add(factory.createFieldFromText(constText, psiClass))
-                    }
-                }
-                y++
+            // 如果字段是 queryable，则生成 QueryAttr_ 常量
+            if (field.queryable) {
+                val constName = "QueryAttr_${field.field.capitalizeFirstLetter()}"
+                val constText = "public static final String $constName = \"${field.field}\";"
+                addConstantAfterPrevious(psiClass, constText, factory, previousConstName)
+            }
+
+            // 如果字段是 sortable，则生成 OrderAttr_ 常量
+            if (field.sortable) {
+                val constName = "OrderAttr_${field.field.capitalizeFirstLetter()}"
+                val constText = "public static final String $constName = \"${field.field}\";"
+                addConstantAfterPrevious(psiClass, constText, factory, previousConstName)
             }
         }
+    }
 
+    // 按顺序插入常量
+    private fun addConstantAfterPrevious(
+        psiClass: PsiClass,
+        constText: String,
+        factory: PsiElementFactory,
+        previousConstName: String?
+    ) {
+        val newConst = factory.createFieldFromText(constText, psiClass)
+
+        if (previousConstName == null) {
+            // 如果没有前一个常量，则直接添加到类中
+            psiClass.add(newConst)
+        } else {
+            // 找到前一个常量的位置
+            val previousConst = psiClass.fields.find { it.name == previousConstName }
+            if (previousConst != null) {
+                // 在前一个常量后面插入新常量
+                previousConst.parent.addAfter(newConst, previousConst)
+            } else {
+                // 如果找不到前一个常量（理论上不应该发生），直接添加到类中
+                psiClass.add(newConst)
+            }
+        }
     }
 
     private fun generateConstructors(
@@ -565,7 +595,8 @@ class EntityQueryParaGenerator(
         """.trimIndent()
 
         psiClass.methods.find { it.name == "SetQueryPara" }?.delete()
-        psiClass.add(factory.createMethodFromText(methodCode, psiClass))
+        val pa = psiClass.constructors.find { it.parameterList.parameters.size > 1 }!!
+        pa.parent.addAfter(factory.createMethodFromText(methodCode, psiClass), pa.lastChild)
     }
 
     private fun generateParamMethods(
