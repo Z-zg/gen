@@ -2,6 +2,7 @@ package com.github.zzg.gen
 
 import com.github.zzg.gen.Parser.parseEntityDescAnnotation
 import com.github.zzg.gen.config.MyPluginSettings
+import com.github.zzg.gen.ops.*
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
