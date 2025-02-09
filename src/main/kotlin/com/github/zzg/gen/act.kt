@@ -57,6 +57,13 @@ class GenAnAction : AnAction() {
             val file = EntityGenerator(context).generate()!!
 //            val project = psiFile.project
             val qp = EntityQueryParaGenerator(context).generate()!!
+
+            val li = QueryListGenerator(context).generate()!!
+
+            val ibsvr = IBaseSvrGenerator(context).generate()!!
+
+            val bsvr = BaseSvrGenerator(context).generate()!!
+
             // 在写操作上下文中执行格式化
             WriteCommandAction.runWriteCommandAction(project) {
                 // 获取 CodeStyleManager 实例
@@ -64,6 +71,9 @@ class GenAnAction : AnAction() {
                 // 对整个 PsiFile 进行格式化
                 codeStyleManager.reformat(file)
                 codeStyleManager.reformat(qp)
+                codeStyleManager.reformat(li)
+                codeStyleManager.reformat(ibsvr)
+                codeStyleManager.reformat(bsvr)
             }
         } else {
             Messages.showInfoMessage("The class does not contain the annotation: $targetAnnotation", "Info")

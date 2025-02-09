@@ -25,7 +25,7 @@ object Parser {
             it.text.removeSurrounding("\"")
         }?.toTypedArray() ?: emptyArray()
         // 返回注解信息
-        return psiClass.fields.map { parseEntityFieldDescAnnotation(it) }.toTypedArray().let {
+        return psiClass.fields.map { parseEntityFieldDescAnnotation(it)!! }.toTypedArray().let {
             var copy = it
             if (logicDel) {
                 copy = copy.plus(
@@ -99,7 +99,7 @@ data class EntityDescMetadata(
     val namespace: String,
     val superClass: PsiType?,
     val childClass: String,
-    val fields: Array<EntityFieldDescMetadata?>,
+    val fields: Array<EntityFieldDescMetadata>,
     val index: Array<String>
 )
 
