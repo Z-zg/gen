@@ -19,6 +19,7 @@ fun String.capitalizeFirstLetter(): String {
         if (it.isLowerCase()) it.titlecase() else it.toString()
     }
 }
+
 interface Generator {
     val context: Context
     fun findClassInModule(module: Module, packageName: String, className: String): PsiClass? {
@@ -112,6 +113,41 @@ interface Generator {
         }
     }
 
+    /**
+     * 修改后的生成方法模板
+     */
+    fun addMethodAfterPrevious(
+        psiClass: PsiClass,
+        methodCode: String,
+        factory: PsiElementFactory,
+        previousMethodName: String?,
+        previousMethodParams: List<String> = emptyList()
+    ) {
+        val newMethod = factory.createMethodFromText(methodCode, psiClass)
+        val methods = psiClass.methods
+
+        if (previousMethodName == null) {
+            // 如果没有前一个方法，则直接添加到类中
+            psiClass.add(newMethod)
+        } else {
+            // 找到前一个方法的位置
+            val previousMethod = methods.find { method ->
+                method.name == previousMethodName &&
+                        method.parameterList.parameters.size == previousMethodParams.size &&
+                        method.parameterList.parameters.zip(previousMethodParams).all { (param, expectedType) ->
+                            param.type.canonicalText == expectedType
+                        }
+            }
+            if (previousMethod != null) {
+                // 在前一个方法后面插入新方法
+                previousMethod.parent.addAfter(newMethod, previousMethod)
+            } else {
+                // 如果找不到前一个方法（理论上不应该发生），直接添加到类中
+                psiClass.add(newMethod)
+            }
+        }
+    }
+
     fun generate(): PsiFile? {
         val module = findMavenModuleOrCurrent(context.project, context.metadata.module)!!
         val psiClass = findOrCreateClass(module, context.metadata)
@@ -146,7 +182,7 @@ fun isCustomType(fieldType: String): Boolean {
     return !on.contains(fieldType)
 }
 
-public fun findModule(project: Project, moduleName: String):
+fun findModule(project: Project, moduleName: String):
         Module? {
     return ModuleManager.getInstance(project).modules.find { it.name == moduleName }
 }
@@ -537,198 +573,336 @@ class EntityQueryParaGenerator(
         metadata: EntityDescMetadata,
         factory: PsiElementFactory
     ) {
-        metadata.fields.filterNotNull().forEach { field ->
-            when (field.type.canonicalText) {
-                "java.lang.String" -> generateStringParamMethods(field, psiClass, factory)
-                "boolean", "java.lang.Boolean" -> generateBooleanParamMethods(field, psiClass, factory)
-                "int", "java.lang.Integer", "long", "java.lang.Long" -> generateNumericParamMethods(
-                    field,
-                    psiClass,
-                    factory
-                )
+        // 需要完善，
+        metadata.fields.filterNotNull().forEachIndexed { index, field ->
+            if (field.queryable) { // 只处理 queryable 为 true 的字段
+                when (field.type.canonicalText) {
+                    "java.lang.String" -> generateStringParamMethods(metadata, field, psiClass, factory, index)
+                    "boolean", "java.lang.Boolean" -> generateBooleanParamMethods(
+                        metadata,
+                        field,
+                        psiClass,
+                        factory,
+                        index
+                    )
 
-                "java.util.Date" -> generateDateParamMethods(field, psiClass, factory)
-                "java.math.BigDecimal" -> generateBigDecimalParamMethods(field, psiClass, factory)
-                "pengesoft.data.DynDataPacket" -> generateDynDataParamMethod(field, psiClass, factory)
-                else -> generateObjectParamMethods(field, psiClass, factory)
+                    "int", "java.lang.Integer", "long", "java.lang.Long" ->
+                        generateNumericParamMethods(metadata, field, psiClass, factory, index)
+
+                    "java.util.Date" -> generateDateParamMethods(metadata, field, psiClass, factory, index)
+                    "java.math.BigDecimal" -> generateBigDecimalParamMethods(metadata, field, psiClass, factory, index)
+                    "pengesoft.data.DynDataPacket" -> generateDynDataParamMethod(
+                        metadata,
+                        field,
+                        psiClass,
+                        factory,
+                        index
+                    )
+
+                    else -> generateObjectParamMethods(metadata, field, psiClass, factory, index)
+                }
             }
         }
     }
 
     private fun generateStringParamMethods(
+        metadata: EntityDescMetadata,
         field: EntityFieldDescMetadata,
         psiClass: PsiClass,
-        factory: PsiElementFactory
+        factory: PsiElementFactory,
+        index: Int
     ) {
+        val previousMethodName = if (index > 0) {
+            val previousField = metadata.fields[index - 1]
+            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+        } else {
+            null
+        }
+
         // Basic setter
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}(String ${field.field}) {
-                addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
-            }
-        """, factory
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}(String ${field.field}) {
+            addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
+        }
+        """,
+            factory,
+            previousMethodName,
+            listOf("java.lang.String")
         )
 
         // InEmpty处理
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}InEmpty(String ${field.field}) {
-                put(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
-            }
-        """, factory
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}InEmpty(String ${field.field}) {
+            put(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
+        }
+        """,
+            factory,
+            "setParamBy${field.field.capitalizeFirstLetter()}",
+            listOf("java.lang.String")
         )
 
         // Enum版本
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}_Enum(String... ${field.field}s) {
-                addParameterByEnum(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field}s);
-            }
-        """, factory
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}_Enum(String... ${field.field}s) {
+            addParameterByEnum(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field}s);
+        }
+        """,
+            factory,
+            "setParamBy${field.field.capitalizeFirstLetter()}InEmpty",
+            listOf("java.lang.String[]")
         )
     }
 
     private fun generateBooleanParamMethods(
+        metadata: EntityDescMetadata,
         field: EntityFieldDescMetadata,
         psiClass: PsiClass,
-        factory: PsiElementFactory
+        factory: PsiElementFactory,
+        index: Int
     ) {
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}(boolean ${field.field}) {
-                addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
-            }
-        """, factory
+        val previousMethodName = if (index > 0) {
+            val previousField = metadata.fields[index - 1]
+            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+        } else {
+            null
+        }
+
+        // Basic setter
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}(boolean ${field.field}) {
+            addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
+        }
+        """,
+            factory,
+            previousMethodName,
+            listOf("boolean")
         )
     }
 
     private fun generateNumericParamMethods(
+        metadata: EntityDescMetadata,
         field: EntityFieldDescMetadata,
         psiClass: PsiClass,
-        factory: PsiElementFactory
+        factory: PsiElementFactory,
+        index: Int
     ) {
         val type = field.type.canonicalText.removePrefix("java.lang.")
+        val previousMethodName = if (index > 0) {
+            val previousField = metadata.fields[index - 1]
+            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+        } else {
+            null
+        }
 
-        // 基本方法
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}($type ${field.field}) {
-                addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
-            }
-        """, factory
+        // Basic setter
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}($type ${field.field}) {
+            addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
+        }
+        """,
+            factory,
+            previousMethodName,
+            listOf(type)
         )
 
         // 包含0值
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}IncZero($type ${field.field}) {
-                put(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
-            }
-        """, factory
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}IncZero($type ${field.field}) {
+            put(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
+        }
+        """,
+            factory,
+            "setParamBy${field.field.capitalizeFirstLetter()}",
+            listOf(type)
         )
 
         // 枚举参数
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}_Enum($type... ${field.field}s) {
-                addParameterByEnum(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field}s);
-            }
-        """, factory
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}_Enum($type... ${field.field}s) {
+            addParameterByEnum(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field}s);
+        }
+        """,
+            factory,
+            "setParamBy${field.field.capitalizeFirstLetter()}IncZero",
+            listOf("$type[]")
         )
 
         // 范围查询
-        addMethodIfNotExists(
+        addMethodAfterPrevious(
             psiClass,
             """public void setParamBy${field.field.capitalizeFirstLetter()}_Range($type low, $type high) {
-                addParameterByRange(QueryAttr_${field.field.capitalizeFirstLetter()}, low, high);
-            }
-        """, factory
+            addParameterByRange(QueryAttr_${field.field.capitalizeFirstLetter()}, low, high);
+        }
+        """,
+            factory,
+            "setParamBy${field.field.capitalizeFirstLetter()}_Enum",
+            listOf(type, type)
         )
     }
 
     private fun generateDateParamMethods(
+        metadata: EntityDescMetadata,
         field: EntityFieldDescMetadata,
         psiClass: PsiClass,
-        factory: PsiElementFactory
+        factory: PsiElementFactory,
+        index: Int
     ) {
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}(java.util.Date ${field.field}) {
-                addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
-            }
-        """, factory
+        val previousMethodName = if (index > 0) {
+            val previousField = metadata.fields[index - 1]
+            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+        } else {
+            null
+        }
+
+        // Basic setter
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}(java.util.Date ${field.field}) {
+            addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
+        }
+        """,
+            factory,
+            previousMethodName,
+            listOf("java.util.Date")
         )
 
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}_Range(java.util.Date startDate, java.util.Date endDate) {
-                addParameterByRange(QueryAttr_${field.field.capitalizeFirstLetter()}, startDate, endDate);
-            }
-        """, factory
+        // 范围查询
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}_Range(java.util.Date startDate, java.util.Date endDate) {
+            addParameterByRange(QueryAttr_${field.field.capitalizeFirstLetter()}, startDate, endDate);
+        }
+        """,
+            factory,
+            "setParamBy${field.field.capitalizeFirstLetter()}",
+            listOf("java.util.Date", "java.util.Date")
         )
     }
 
     private fun generateBigDecimalParamMethods(
+        metadata: EntityDescMetadata,
         field: EntityFieldDescMetadata,
         psiClass: PsiClass,
-        factory: PsiElementFactory
+        factory: PsiElementFactory,
+        index: Int
     ) {
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}(java.math.BigDecimal ${field.field}) {
-                addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
-            }
-        """, factory
+        val previousMethodName = if (index > 0) {
+            val previousField = metadata.fields[index - 1]
+            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+        } else {
+            null
+        }
+
+        // Basic setter
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}(java.math.BigDecimal ${field.field}) {
+            addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
+        }
+        """,
+            factory,
+            previousMethodName,
+            listOf("java.math.BigDecimal")
         )
 
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}IncZero(java.math.BigDecimal ${field.field}) {
-                put(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
-            }
-        """, factory
+        // 包含0值
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}IncZero(java.math.BigDecimal ${field.field}) {
+            put(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
+        }
+        """,
+            factory,
+            "setParamBy${field.field.capitalizeFirstLetter()}",
+            listOf("java.math.BigDecimal")
         )
 
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}_Enum(java.math.BigDecimal... ${field.field}s) {
-                addParameterByEnum(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field}s);
-            }
-        """, factory
+        // 枚举参数
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}_Enum(java.math.BigDecimal... ${field.field}s) {
+            addParameterByEnum(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field}s);
+        }
+        """,
+            factory,
+            "setParamBy${field.field.capitalizeFirstLetter()}IncZero",
+            listOf("java.math.BigDecimal[]")
         )
 
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}_Range(java.math.BigDecimal low, java.math.BigDecimal high) {
-                addParameterByRange(QueryAttr_${field.field.capitalizeFirstLetter()}, low, high);
-            }
-        """, factory
+        // 范围查询
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}_Range(java.math.BigDecimal low, java.math.BigDecimal high) {
+            addParameterByRange(QueryAttr_${field.field.capitalizeFirstLetter()}, low, high);
+        }
+        """,
+            factory,
+            "setParamBy${field.field.capitalizeFirstLetter()}_Enum",
+            listOf("java.math.BigDecimal", "java.math.BigDecimal")
         )
     }
 
     private fun generateDynDataParamMethod(
+        metadata: EntityDescMetadata,
         field: EntityFieldDescMetadata,
         psiClass: PsiClass,
-        factory: PsiElementFactory
+        factory: PsiElementFactory,
+        index: Int
     ) {
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}(DynDataPacket ${field.field}) {
-                addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
-            }
-        """, factory
+        val previousMethodName = if (index > 0) {
+            val previousField = metadata.fields[index - 1]
+            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+        } else {
+            null
+        }
+
+        // Basic setter
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}(DynDataPacket ${field.field}) {
+            addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
+        }
+        """,
+            factory,
+            previousMethodName,
+            listOf("pengesoft.data.DynDataPacket")
         )
     }
 
     private fun generateObjectParamMethods(
+        metadata: EntityDescMetadata,
         field: EntityFieldDescMetadata,
         psiClass: PsiClass,
-        factory: PsiElementFactory
+        factory: PsiElementFactory,
+        index: Int
     ) {
-        addMethodIfNotExists(
-            psiClass, """public void setParamBy${field.field.capitalizeFirstLetter()}(Object ${field.field}) {
-                addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
-            }
-        """, factory
+        val previousMethodName = if (index > 0) {
+            val previousField = metadata.fields[index - 1]
+            "setParamBy${previousField?.field?.capitalizeFirstLetter()}"
+        } else {
+            null
+        }
+
+        // Basic setter
+        addMethodAfterPrevious(
+            psiClass,
+            """public void setParamBy${field.field.capitalizeFirstLetter()}(Object ${field.field}) {
+            addParameter(QueryAttr_${field.field.capitalizeFirstLetter()}, ${field.field});
+        }
+        """,
+            factory,
+            previousMethodName,
+            listOf("java.lang.Object")
         )
     }
 
-    private fun addMethodIfNotExists(
-        psiClass: PsiClass,
-        methodCode: String,
-        factory: PsiElementFactory
-    ) {
-        val methodName = methodCode.substringAfter("public void ").substringBefore("(")
-        if (psiClass.methods.none { it.name == methodName }) {
-            psiClass.add(factory.createMethodFromText(methodCode, psiClass))
-        }
-    }
 }
 
 class EntityQueryExParaGenerator(
