@@ -433,7 +433,7 @@ class EntityGenerator(
             ) as PsiJavaFile
             val directory = getOrCreateDirectory(metadata.pkg, module)
             directory.add(psiFile)
-        };
+        }
         return findOrCreateClass(module, metadata)
     }
 }
