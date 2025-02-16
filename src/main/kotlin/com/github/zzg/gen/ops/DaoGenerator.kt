@@ -22,7 +22,7 @@ class DaoGenerator(
             // 创建类并继承 DataProvider
             val psiClass = psiElementFactory.createClass(className).apply {
                 val extendsRef = psiElementFactory.createReferenceFromText(
-                    "pengesoft.db.DataProvider<${metadata.className}>",
+                    "pengesoft.db.DataProvider<${metadata.pkg}.${metadata.className}>",
                     this
                 )
                 extendsList?.add(extendsRef)
