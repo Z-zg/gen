@@ -11,6 +11,10 @@ import com.intellij.psi.*
 class DaoGenerator(
     override val context: Context
 ) : Generator {
+    override fun updateClassPkg(psiElementFactory: PsiElementFactory, pkg: String, psiClass: PsiClass) {
+        super.updateClassPkg(psiElementFactory, "$pkg.dao", psiClass)
+    }
+
     override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
         WriteCommandAction.runWriteCommandAction(module.project) {
             val psiElementFactory = PsiElementFactory.getInstance(module.project)
@@ -29,13 +33,13 @@ class DaoGenerator(
             val psiFile = PsiFileFactory.getInstance(module.project)
                 .createFileFromText("$className.java", JavaFileType.INSTANCE, psiClass.text) as PsiJavaFile
             // 添加到目标目录
-            getOrCreateDirectory(metadata.pkg, module).add(psiFile)
+            getOrCreateDirectory(metadata.pkg+".dao", module).add(psiFile)
         }
         return findOrCreateClass(module, context.metadata)
     }
 
     override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
-        return findClassInModule(module, metadata.pkg, "${metadata.className}Dao")
+        return findClassInModule(module, metadata.pkg+".dao", "${metadata.className}Dao")
             ?: createNewClass(module, metadata)
     }
 

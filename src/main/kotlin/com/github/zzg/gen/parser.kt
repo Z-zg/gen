@@ -76,8 +76,8 @@ object Parser {
         return EntityFieldDescMetadata(
             field = field.name,
             type = field.type,
-            desc = (desc ?: "") + ".",
-            columnName = columnName ?: field.name.capitalizeFirstLetter(),
+            desc = desc!!,
+            columnName = if (columnName.isNullOrBlank()) field.name.capitalizeFirstLetter() else columnName,
             primary = primary,
             width = width,
             pass = pass,

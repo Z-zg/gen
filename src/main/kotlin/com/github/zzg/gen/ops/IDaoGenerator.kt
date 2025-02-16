@@ -10,6 +10,10 @@ import com.intellij.psi.*
 class IDaoGenerator(
     override val context: Context
 ) : Generator {
+    override fun updateClassPkg(psiElementFactory: PsiElementFactory, pkg: String, psiClass: PsiClass) {
+        super.updateClassPkg(psiElementFactory, "$pkg.dao", psiClass)
+    }
+
     override fun createNewClass(module: Module, metadata: EntityDescMetadata): PsiClass {
         WriteCommandAction.runWriteCommandAction(module.project) {
             val psiElementFactory = PsiElementFactory.getInstance(module.project)
@@ -17,7 +21,7 @@ class IDaoGenerator(
             // 创建接口并继承 IDataProvider
             val psiClass = psiElementFactory.createInterface(className).apply {
                 val extendsRef = psiElementFactory.createReferenceFromText(
-                    "pengesoft.db.IDataProvider<${metadata.className}>",
+                    "pengesoft.db.IDataProvider<${metadata.pkg}.${metadata.className}>",
                     this
                 )
                 extendsList?.add(extendsRef)
@@ -26,13 +30,13 @@ class IDaoGenerator(
             val psiFile = PsiFileFactory.getInstance(module.project)
                 .createFileFromText("$className.java", JavaFileType.INSTANCE, psiClass.text) as PsiJavaFile
             // 添加到目标目录
-            getOrCreateDirectory(metadata.pkg, module).add(psiFile)
+            getOrCreateDirectory(metadata.pkg+".dao", module).add(psiFile)
         }
         return findOrCreateClass(module, context.metadata)
     }
 
     override fun findOrCreateClass(module: Module, metadata: EntityDescMetadata): PsiClass {
-        return findClassInModule(module, metadata.pkg, "I${metadata.className}Dao")
+        return findClassInModule(module, metadata.pkg+".dao", "I${metadata.className}Dao")
             ?: createNewClass(module, metadata)
     }
 

@@ -1,9 +1,6 @@
 package com.github.zzg.gen.ops
 
-import com.github.zzg.gen.Context
-import com.github.zzg.gen.EntityDescMetadata
-import com.github.zzg.gen.EntityFieldDescMetadata
-import com.github.zzg.gen.decapitalizeFirstLetter
+import com.github.zzg.gen.*
 import com.intellij.ide.highlighter.XmlFileType
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.module.Module
@@ -13,7 +10,6 @@ import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.PsiTypesUtil
 import com.intellij.psi.xml.XmlFile
-import org.jetbrains.kotlin.idea.gradleTooling.get
 
 
 class MybatisXmlGenerator(override val context: Context) : Generator {
@@ -75,7 +71,7 @@ class MybatisXmlGenerator(override val context: Context) : Generator {
         val metadata = context.metadata
         return """<?xml version="1.0" encoding="UTF-8" ?>
         <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-        <mapper namespace="${metadata.namespace}.dao.${metadata.className}Dao">
+        <mapper namespace="${metadata.pkg}.dao.${metadata.className}Dao">
             ${buildResultMap()}
             ${buildSqlColumns("BaseCol")}
             ${buildSqlColumns("AllCol")}
@@ -156,12 +152,21 @@ class MybatisXmlGenerator(override val context: Context) : Generator {
                 else -> """#{${field.field},jdbcType=${getJdbcType(field)}}"""
             }
         }
+        val res2 = context.metadata.fields.filter { !it.pass && !it.primary }.map { field ->
+            when {
+                isJsonField(context.project, field) -> """${field.field.capitalizeFirstLetter()} = #{${field.field}.jsonText,jdbcType=VARCHAR}"""
+                else -> """${field.field.capitalizeFirstLetter()} = #{${field.field},jdbcType=${getJdbcType(field)}}"""
+            }
+        }
         return """<sql id="${context.metadata.className.decapitalizeFirstLetter()}InsertCol">
-            |${res.joinToString { "\n" }}
-            |</sql>
-            |<sql id="${context.metadata.className.decapitalizeFirstLetter()}UpdateValues">
-            |${res1.joinToString { "\n" }}
-            |</sql>
+            ${res.joinToString(",\n")}
+            </sql>
+            <sql id="${context.metadata.className.decapitalizeFirstLetter()}InsertValues">
+            ${res1.joinToString(",\n")}
+            </sql>
+            <sql id="${context.metadata.className.decapitalizeFirstLetter()}UpdateValues">
+            ${res2.joinToString(",\n")}
+            </sql>
         """.trimIndent()
     }
 
@@ -173,8 +178,8 @@ class MybatisXmlGenerator(override val context: Context) : Generator {
                         and JSON_VALUE(t.${'$'}{JsonColName}, '${'$'}{item.propPath}') like #{item.propVal}
                     </if>
                     <if test="item.propType == 'date' or item.propType == 'number'">
-                        and JSON_VALUE(t.${'$'}{JsonColName}, '${'$'}{item.propPath}') > #{item.queryRangeStart} 
-                        and JSON_VALUE(t.${'$'}{JsonColName}, '${'$'}{item.propPath}') < #{item.queryRangeEnd}
+                        and JSON_VALUE(t.${'$'}{JsonColName}, '${'$'}{item.propPath}') &gt; #{item.queryRangeStart} 
+                        and JSON_VALUE(t.${'$'}{JsonColName}, '${'$'}{item.propPath}') &lt; #{item.queryRangeEnd}
                     </if>
                     <if test="item.propType == 'enum'">
                         and JSON_VALUE(t.${'$'}{JsonColName}, '${'$'}{item.propPath}') in
@@ -186,7 +191,7 @@ class MybatisXmlGenerator(override val context: Context) : Generator {
             </if>
         </sql>
         <sql id="${context.metadata.className.decapitalizeFirstLetter()}WhereSql">
-        <trim prefix="WHERE" prefixOverrides="and |or ">
+        <trim prefix="WHERE" prefixOverrides="and or ">
             <include refid="${context.metadata.pkg}.dao.${context.metadata.className}Dao.${context.metadata.className}WhereSqlInner"/>
             <if test="_default_mulattr != null">
                 and (
@@ -204,20 +209,20 @@ class MybatisXmlGenerator(override val context: Context) : Generator {
         val res1 = context.metadata.fields.filter { it.queryable }.map { field ->
             when (field.type.canonicalText) {
                 "java.lang.String" -> """<if test="${field.field} != null">
-                                            |<if test="${field.field} == ''">
-                                            |   and (t.${field.columnName} is null or t.${field.columnName} = '')
-                                            |</if>
-                                            |<if test="${field.field} != ''">
-                                            |    and t.${field.columnName} like #{${field.field}}
-                                            |</if>
-                                            |</if>
-                                            |<if test="${field.field}_Enum != null">
-                                                |and t.${field.columnName} in
-                                                |<foreach collection="${field.field}_Enum" item="item" open="(" separator="," close=")">#{item}</foreach>
-                                            |</if>
-                                            |<if test="${field.field}_EnumLike != null">
-                                                |and <foreach collection="${field.field}_EnumLike" item="item" open="(" separator=" or " close=")">t.${field.columnName} like #{item}</foreach>
-                                            |</if>"""
+                                            <if test="${field.field} == ''">
+                                               and (t.${field.columnName} is null or t.${field.columnName} = '')
+                                            </if>
+                                            <if test="${field.field} != ''">
+                                                and t.${field.columnName} like #{${field.field}}
+                                            </if>
+                                            </if>
+                                            <if test="${field.field}_Enum != null">
+                                                and t.${field.columnName} in
+                                                <foreach collection="${field.field}_Enum" item="item" open="(" separator="," close=")">#{item}</foreach>
+                                            </if>
+                                            <if test="${field.field}_EnumLike != null">
+                                                and <foreach collection="${field.field}_EnumLike" item="item" open="(" separator=" or " close=")">t.${field.columnName} like #{item}</foreach>
+                                            </if>"""
 
                 "java.util.Date" -> """<if test="${field.field} != null">and t.${field.columnName} = #{${field.field}}</if>
         <if test="${field.field}_S != null"><![CDATA[ and t.${field.columnName} > #{${field.field}_S} and t.${field.columnName} < #{${field.field}_E} ]]></if>"""
@@ -241,28 +246,28 @@ class MybatisXmlGenerator(override val context: Context) : Generator {
         }
         val res3 = context.metadata.fields.filter { it.sortable }.map { field ->
             """<if test="item == '${field.field}'">t.${field.columnName}</if>
-                |<if test="item == '${field.field}_D'">t.${field.columnName} desc</if>"""
+                <if test="item == '${field.field}_D'">t.${field.columnName} desc</if>"""
         }
         return """<sql id="${context.metadata.className.decapitalizeFirstLetter()}WhereSqlInner">
-            |${res1.joinToString { "\n" }}
-            |</sql>
-            |<sql id="${context.metadata.className.decapitalizeFirstLetter()}WhereSqlInnerOr">
-            |${res2.joinToString { "\n" }}
-            |</sql>
-            |
-            |<sql id="${context.metadata.className.decapitalizeFirstLetter()}OrderSql">
-                |<trim prefix="ORDER BY" suffixOverrides=",">
-                |    <if test="_orderBys != null">
-                |        <foreach collection="_orderBys" item="item" open="" separator="," close="">
-                |            <include refid="${context.metadata.pkg}.dao.${context.metadata.className}Dao.${context.metadata.className}OrderSqlInner"/>
-                |        </foreach>
-                |    </if>
-                |</trim>
-            |</sql>
-            |
-            |<sql id="eaAreaContractOrderSqlInner">
-            |   ${res3.joinToString { "\n" }}
-            |</sql>
+            ${res1.joinToString("\n")}
+            </sql>
+            <sql id="${context.metadata.className.decapitalizeFirstLetter()}WhereSqlInnerOr">
+            ${res2.joinToString("\n")}
+            </sql>
+            
+            <sql id="${context.metadata.className.decapitalizeFirstLetter()}OrderSql">
+                <trim prefix="ORDER BY" suffixOverrides=",">
+                    <if test="_orderBys != null">
+                        <foreach collection="_orderBys" item="item" open="" separator="," close="">
+                            <include refid="${context.metadata.pkg}.dao.${context.metadata.className}Dao.${context.metadata.className}OrderSqlInner"/>
+                        </foreach>
+                    </if>
+                </trim>
+            </sql>
+            
+            <sql id="eaAreaContractOrderSqlInner">
+               ${res3.joinToString("\n")}
+            </sql>
         """.trimMargin()
     }
 
@@ -275,7 +280,7 @@ class MybatisXmlGenerator(override val context: Context) : Generator {
                 ) || field.pass) -> ""
 
                 field.pass -> ""
-                else -> "t.${field.field}"
+                else -> "t.${field.field.capitalizeFirstLetter()}"
             }
         }
         return """<sql id = "${context.metadata.className.decapitalizeFirstLetter()}${type}">
@@ -305,6 +310,6 @@ class MybatisXmlGenerator(override val context: Context) : Generator {
             }
             return findOrCreateXml(module, metadata)
         }
-        return xmls["0"] as XmlFile
+        return PsiManager.getInstance(module.project).findFile(ArrayList(xmls)[0]) as XmlFile
     }
 }
