@@ -155,7 +155,7 @@ class MybatisXmlGenerator(override val context: Context) : Generator {
         val res2 = context.metadata.fields.filter { !it.pass && !it.primary }.map { field ->
             when {
                 isJsonField(context.project, field) -> """${field.field.capitalizeFirstLetter()} = #{${field.field}.jsonText,jdbcType=VARCHAR}"""
-                else -> """${field.field.capitalizeFirstLetter()} = #{${field.field},jdbcType=${getJdbcType(field)}}"""
+                else -> """${field.columnName} = #{${field.field},jdbcType=${getJdbcType(field)}}"""
             }
         }
         return """<sql id="${context.metadata.className.decapitalizeFirstLetter()}InsertCol">

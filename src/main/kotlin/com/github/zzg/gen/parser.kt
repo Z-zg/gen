@@ -33,7 +33,7 @@ object Parser {
                         "flagDel",
                         PsiElementFactory.getInstance(psiClass.project).createPrimitiveType("boolean")!!,
                         desc = "删除标识",
-                        columnName = "flagDel",
+                        columnName = "FlagDel",
                         primary = false,
                         width = 0,
                         pass = false,
