@@ -24,7 +24,6 @@ fun String.decapitalizeFirstLetter(): String {
 }
 
 
-
 fun getDefaultValue(type: String): String {
     return when (type) {
         "int" -> "0"
@@ -81,9 +80,6 @@ data class Context(
 )
 
 
-
-
-
 class EntityQueryExParaGenerator(
     override val context: Context
 ) : Generator {
@@ -103,10 +99,6 @@ class EntityQueryExParaGenerator(
         TODO("Not yet implemented")
     }
 }
-
-
-
-
 
 
 class MybatisXmlGenerator(

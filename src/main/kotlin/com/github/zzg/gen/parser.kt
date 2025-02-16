@@ -77,7 +77,7 @@ object Parser {
             field = field.name,
             type = field.type,
             desc = (desc ?: "") + ".",
-            columnName = columnName ?: field.name,
+            columnName = columnName ?: field.name.capitalizeFirstLetter(),
             primary = primary,
             width = width,
             pass = pass,

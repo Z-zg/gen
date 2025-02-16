@@ -3,6 +3,7 @@ package com.github.zzg.gen
 import com.github.zzg.gen.Parser.parseEntityDescAnnotation
 import com.github.zzg.gen.config.MyPluginSettings
 import com.github.zzg.gen.ops.*
+import com.github.zzg.gen.ops.MybatisXmlGenerator
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
@@ -69,7 +70,9 @@ class GenAnAction : AnAction() {
 
             val bsvr = BaseSvrGenerator(context).generate()!!
 
-            val arr = listOf(file,d, qp, id, li, ibsvr, bsvr)
+            val ibxml = MybatisXmlGenerator(context).generate()
+
+            val arr = listOf(file,d, qp, id, li, ibsvr, bsvr,ibxml)
             // 在写操作上下文中执行格式化
             WriteCommandAction.runWriteCommandAction(project) {
                 // 获取 CodeStyleManager 实例
