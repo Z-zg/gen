@@ -135,6 +135,7 @@ class MybatisXmlGenerator(override val context: Context) : Generator {
     private fun getJdbcType(field: EntityFieldDescMetadata): String {
         return when (field.type.canonicalText) {
             "java.lang.String" -> "VARCHAR"
+            "java.math.BigDecimal" -> "DECIMAL"
             "java.util.Date" -> "TIMESTAMP"
             "int","java.lang.Integer" -> "INTEGER"
             "java.lang.Boolean" -> "BOOLEAN"

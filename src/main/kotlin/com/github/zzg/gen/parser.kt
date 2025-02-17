@@ -3,10 +3,72 @@ package com.github.zzg.gen
 
 import com.intellij.psi.*
 import com.intellij.psi.impl.source.tree.java.PsiClassObjectAccessExpressionImpl
+import com.intellij.psi.search.FilenameIndex
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.xml.XmlFile
+import org.jetbrains.kotlin.idea.base.util.module
 
 
 @Suppress("unused")
 object Parser {
+    fun parseEntityDescByPsiClass(psiClass: PsiClass): EntityDescMetadata? {
+        // 找到类 再找到对应的QueryPara
+        val dir = psiClass.containingFile.containingDirectory
+        // 找到Para
+        PsiDocumentManager.getInstance(psiClass.project).commitAllDocuments()
+        val scope = GlobalSearchScope.moduleWithDependenciesAndLibrariesScope(psiClass.module!!)
+        val psiPackage = JavaDirectoryService.getInstance().getPackage(dir)?.qualifiedName
+        val queryParaClass = JavaPsiFacade.getInstance(psiClass.project)
+            .findClass(psiPackage + "." + psiClass.name + "QueryPara", scope)!!
+        val qset = HashSet<String>()
+        val oset = HashSet<String>()
+        queryParaClass.fields.forEach {
+            if (it.name.startsWith("OrderAttr_")) {
+                oset.add(it.name.removePrefix("OrderAttr_").decapitalizeFirstLetter())
+            }
+            if (it.name.startsWith("QueryAttr_")) {
+                qset.add(it.name.removePrefix("QueryAttr_").decapitalizeFirstLetter())
+            }
+        }
+        // 找到 xml
+        val xmlArr = FilenameIndex.getVirtualFilesByName("mybatis-${psiClass.name}.xml", scope)
+        val xmlFile = PsiManager.getInstance(psiClass.project).findFile(ArrayList(xmlArr)[0]) as XmlFile
+        // 解析xmlFile
+        val insertTag = xmlFile.rootTag?.subTags?.find { it.name == "insert" }!!
+        val regex = Regex("insert\\s+into\\s+(\\w+)", RegexOption.IGNORE_CASE)
+
+        // 使用正则表达式匹配 SQL 语句
+        val tableName = regex.find(insertTag.text)?.groupValues?.get(1)!!
+
+        val fields = psiClass.fields.map {
+            EntityFieldDescMetadata(
+                field = it.name,
+                type = it.type,
+                desc = it.docComment?.text ?: it.name,
+                columnName = it.name.capitalizeFirstLetter(),
+                primary = false,
+                width = 0,
+                pass = it.docComment?.text?.contains("跳过") ?: false,
+                queryable = qset.contains(it.name),
+                sortable = oset.contains(it.name),
+                remark = ""
+            )
+        }.toTypedArray()
+        return EntityDescMetadata(
+            module = psiClass.module?.name ?: "",
+            pkg = psiPackage!!,
+            className = psiClass.name!!,
+            tbName = tableName,
+            desc = "",
+            logicDel = true,
+            namespace = psiPackage,
+            superClass = psiClass.superClassType as PsiType,
+            childClass = "",
+            fields = fields,
+            index = emptyArray()
+            )
+    }
+
     fun parseEntityDescAnnotation(psiClass: PsiClass): EntityDescMetadata? {
         // 获取 @EntityDesc 注解
         val entityDescAnnotation = psiClass.getAnnotation("org.zq.EntityDesc") ?: return null

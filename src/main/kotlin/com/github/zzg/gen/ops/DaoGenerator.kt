@@ -103,6 +103,7 @@ class DaoGenerator(
              */
         """.trimIndent()
         val comment = factory.createCommentFromText(commentText, psiClass)
-        psiClass.add(comment)
+        psiClass.children.findLast { it is PsiComment }?.delete()
+        psiClass.addBefore(comment, psiClass.lastChild)
     }
 }
